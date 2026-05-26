@@ -22,6 +22,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.friendorfoe.data.local.GameSessionEntity
 import com.friendorfoe.data.local.HistoryEntity
 import com.friendorfoe.presentation.filter.FilterBar
 import com.friendorfoe.presentation.util.categoryColor
@@ -66,6 +69,7 @@ fun HistoryScreen(
     viewModel: HistoryViewModel = hiltViewModel()
 ) {
     val groupedHistory by viewModel.groupedHistory.collectAsStateWithLifecycle()
+    val recentGameSessions by viewModel.recentGameSessions.collectAsStateWithLifecycle()
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
     val filteredEntryCount by viewModel.filteredEntryCount.collectAsStateWithLifecycle()
 
@@ -78,12 +82,30 @@ fun HistoryScreen(
             onNavigateToAbout = onNavigateToAbout
         )
 
-        if (groupedHistory.isEmpty()) {
+        if (groupedHistory.isEmpty() && recentGameSessions.isEmpty()) {
             EmptyHistoryState()
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize()
             ) {
+                if (recentGameSessions.isNotEmpty()) {
+                    item(key = "game_sessions_header") {
+                        SessionGroupHeader(title = "Recent Game Sessions")
+                    }
+                    items(
+                        items = recentGameSessions,
+                        key = { "session_${it.id}" }
+                    ) { session ->
+                        GameSessionItem(session = session)
+                    }
+                    item(key = "game_sessions_divider") {
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            thickness = 0.7.dp
+                        )
+                    }
+                }
+
                 groupedHistory.forEach { (dateLabel, entries) ->
                     stickyHeader(key = dateLabel) {
                         DateGroupHeader(dateLabel = dateLabel)
@@ -104,6 +126,68 @@ fun HistoryScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SessionGroupHeader(title: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun GameSessionItem(session: GameSessionEntity) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        ),
+        shape = RoundedCornerShape(10.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${session.score} pts",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = formatDateTime(session.endedAt),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "${session.durationSeconds}s  |  H ${session.hits}  M ${session.misses}  |  ${session.accuracyPercent}%  |  Best ${session.bestStreak}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Text(
+                text = "Ended: ${session.exitReason}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+            )
         }
     }
 }
@@ -254,6 +338,14 @@ private fun DetectionSourceBadge(source: String) {
 /** Formats a timestamp (epoch millis) to a readable time string like "2:45 PM". */
 private fun formatTime(epochMillis: Long): String {
     val formatter = DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())
+    return Instant.ofEpochMilli(epochMillis)
+        .atZone(ZoneId.systemDefault())
+        .format(formatter)
+}
+
+/** Formats a timestamp to a compact date-time string like "May 26, 2:45 PM". */
+private fun formatDateTime(epochMillis: Long): String {
+    val formatter = DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.getDefault())
     return Instant.ofEpochMilli(epochMillis)
         .atZone(ZoneId.systemDefault())
         .format(formatter)

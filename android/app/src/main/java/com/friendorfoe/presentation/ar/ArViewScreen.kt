@@ -65,6 +65,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -182,6 +183,8 @@ fun ArViewScreen(
     val lockedObjectId by viewModel.lockedObjectId.collectAsStateWithLifecycle()
     val lockedScreenPosition by viewModel.lockedScreenPosition.collectAsStateWithLifecycle()
     val snapTarget by viewModel.snapTarget.collectAsStateWithLifecycle()
+    val gameModeEnabled by viewModel.gameModeEnabled.collectAsStateWithLifecycle()
+    val gameSession by viewModel.gameSession.collectAsStateWithLifecycle()
 
     // Auto-capture state
     val autoCaptureEnabled by viewModel.autoCaptureEnabled.collectAsStateWithLifecycle()
@@ -194,12 +197,19 @@ fun ArViewScreen(
     var capturedPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var showShareConfirmation by remember { mutableStateOf(false) }
 
-    // Manage sensor lifecycle: start on resume, stop on pause
+    val latestGameModeEnabled by rememberUpdatedState(gameModeEnabled)
+
+    // Manage sensor lifecycle: start on resume, stop on pause, and end gameplay on stop.
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> viewModel.startSensors(activity)
                 Lifecycle.Event.ON_PAUSE -> viewModel.stopSensors()
+                Lifecycle.Event.ON_STOP -> {
+                    if (latestGameModeEnabled) {
+                        viewModel.disableGameMode()
+                    }
+                }
                 else -> {}
             }
         }
@@ -254,14 +264,14 @@ fun ArViewScreen(
             orientation = orientation,
             onLabelTapped = { objectId ->
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                viewModel.snapAndAutoCapture(objectId, context)
+                viewModel.onPrimaryTargetTapped(objectId, context)
             },
             onLabelLongPressed = { objectId ->
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 viewModel.snapToObject(objectId)
             },
             onVisualTapped = { detection -> viewModel.showZoom(detection) },
-            onEmptySpaceTapped = { viewModel.showUnidentifiedSheet() },
+            onEmptySpaceTapped = { viewModel.onPrimaryEmptyTapped() },
             onReticleTapped = { viewModel.unlockObject() },
             modifier = Modifier.fillMaxSize()
         )
@@ -305,6 +315,17 @@ fun ArViewScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
+        )
+
+        GameModeHud(
+            gameModeEnabled = gameModeEnabled,
+            gameSession = gameSession,
+            onToggle = { viewModel.toggleGameMode() },
+            onRestart = { viewModel.startGameSession() },
+            onStop = { viewModel.disableGameMode() },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 56.dp, end = 16.dp)
         )
 
         // Lock-on HUD badge: shown when an object is locked
@@ -794,6 +815,87 @@ fun ArViewScreen(
                     viewModel.dismissUnidentifiedSheet()
                     viewModel.selectObject(droneId)
                 }
+            )
+        }
+    }
+}
+
+@Composable
+private fun GameModeHud(
+    gameModeEnabled: Boolean,
+    gameSession: GameSessionState,
+    onToggle: () -> Unit,
+    onRestart: () -> Unit,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .background(
+                color = Color.Black.copy(alpha = 0.62f),
+                shape = RoundedCornerShape(14.dp)
+            )
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = if (gameModeEnabled) "GAME MODE" else "GAME OFF",
+            color = if (gameModeEnabled) Color(0xFFFFC107) else Color(0xFFB0BEC5),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold
+        )
+
+        if (gameModeEnabled) {
+            Text(
+                text = "${gameSession.remainingSeconds}s  ${gameSession.score} pts",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = "H ${gameSession.hits}  M ${gameSession.misses}  S ${gameSession.streak}",
+                color = Color.White.copy(alpha = 0.9f),
+                fontSize = 11.sp
+            )
+            if (!gameSession.isRunning) {
+                Text(
+                    text = "Final ${gameSession.accuracyPercent}%",
+                    color = Color(0xFF80DEEA),
+                    fontSize = 11.sp
+                )
+            }
+        }
+
+        HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onClick = onToggle) {
+                Text(
+                    text = if (gameModeEnabled) "Disable" else "Enable",
+                    color = Color.White,
+                    fontSize = 11.sp
+                )
+            }
+            if (gameModeEnabled) {
+                if (gameSession.isRunning) {
+                    TextButton(onClick = onStop) {
+                        Text(text = "End", color = Color(0xFFFF8A80), fontSize = 11.sp)
+                    }
+                } else {
+                    TextButton(onClick = onRestart) {
+                        Text(text = "Restart", color = Color(0xFFA5D6A7), fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+
+        gameSession.lastEvent?.let { event ->
+            Text(
+                text = event,
+                color = Color(0xFFE0F7FA),
+                fontSize = 10.sp,
+                maxLines = 1
             )
         }
     }

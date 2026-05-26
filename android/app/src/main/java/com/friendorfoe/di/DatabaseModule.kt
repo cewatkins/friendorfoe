@@ -2,6 +2,7 @@ package com.friendorfoe.di
 
 import android.content.Context
 import com.friendorfoe.data.local.FriendOrFoeDatabase
+import com.friendorfoe.data.local.GameSessionDao
 import com.friendorfoe.data.local.HistoryDao
 import com.friendorfoe.data.local.TrackingDao
 import dagger.Module
@@ -34,5 +35,11 @@ object DatabaseModule {
     @Singleton
     fun provideTrackingDao(database: FriendOrFoeDatabase): TrackingDao {
         return database.trackingDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideGameSessionDao(database: FriendOrFoeDatabase): GameSessionDao {
+        return database.gameSessionDao()
     }
 }

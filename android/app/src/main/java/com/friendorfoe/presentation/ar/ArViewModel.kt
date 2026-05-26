@@ -18,7 +18,9 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.friendorfoe.data.local.GameSessionEntity
 import com.friendorfoe.data.remote.SensorMapApiService
+import com.friendorfoe.data.repository.GameSessionRepository
 import com.friendorfoe.data.repository.SkyObjectRepository
 import com.friendorfoe.data.repository.WeatherRepository
 import com.friendorfoe.detection.AcousticDetector
@@ -102,6 +104,7 @@ class ArViewModel @Inject constructor(
     private val darkTargetScorer: DarkTargetScorer,
     private val acousticDetector: AcousticDetector,
     private val sensorMapApiService: SensorMapApiService,
+    private val gameSessionRepository: GameSessionRepository,
     val aiClassifier: AiClassifier,
     val trainingDataCollector: TrainingDataCollector,
     @ApplicationContext private val appContext: Context
@@ -109,12 +112,18 @@ class ArViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "ArViewModel"
+        // Safety kill switch: this device reports native ARCore SIGSEGV (tango_pool).
+        // Keep compass fallback active until ARCore path is hardened per-device.
+        private const val ENABLE_ARCORE_ORIENTATION = false
 
         /** Minimum time between location updates in milliseconds */
         private const val LOCATION_UPDATE_INTERVAL_MS = 5000L
 
         /** Minimum distance between location updates in meters */
         private const val LOCATION_UPDATE_DISTANCE_M = 10f
+
+        private const val GAME_SESSION_DURATION_SECONDS = 120
+        private const val GAME_SHOT_COOLDOWN_MS = 250L
     }
 
     /** AI classification result for current visual detection */
@@ -227,6 +236,18 @@ class ArViewModel @Inject constructor(
 
     private val _lockedObjectId = MutableStateFlow<String?>(null)
     val lockedObjectId: StateFlow<String?> = _lockedObjectId.asStateFlow()
+
+    // --- Gameplay mode ---
+
+    private val _gameModeEnabled = MutableStateFlow(false)
+    val gameModeEnabled: StateFlow<Boolean> = _gameModeEnabled.asStateFlow()
+
+    private val _gameSession = MutableStateFlow(GameSessionState())
+    val gameSession: StateFlow<GameSessionState> = _gameSession.asStateFlow()
+
+    private var gameSessionJob: kotlinx.coroutines.Job? = null
+    private var lastGameShotMs = 0L
+    private var gameSessionStartedAtMs: Long? = null
 
     // --- Tap-to-auto-capture state ---
 
@@ -342,6 +363,168 @@ class ArViewModel @Inject constructor(
     fun unlockObject() {
         _lockedObjectId.value = null
         resetZoom()
+    }
+
+    fun toggleGameMode() {
+        if (_gameModeEnabled.value) {
+            disableGameMode()
+        } else {
+            _gameModeEnabled.value = true
+            startGameSession()
+        }
+    }
+
+    fun disableGameMode() {
+        _gameModeEnabled.value = false
+        endGameSession(resetOnly = false)
+    }
+
+    fun startGameSession(durationSeconds: Int = GAME_SESSION_DURATION_SECONDS) {
+        gameSessionJob?.cancel()
+        gameSessionStartedAtMs = System.currentTimeMillis()
+        val clampedDuration = durationSeconds.coerceIn(30, 600)
+        _gameSession.value = GameSessionState(
+            isRunning = true,
+            remainingSeconds = clampedDuration,
+            lastEvent = "Game on"
+        )
+        lastGameShotMs = 0L
+
+        gameSessionJob = viewModelScope.launch {
+            while (isActive && _gameSession.value.isRunning) {
+                delay(1000L)
+                val current = _gameSession.value
+                if (!current.isRunning) break
+
+                val nextRemaining = current.remainingSeconds - 1
+                if (nextRemaining <= 0) {
+                    _gameSession.value = current.copy(
+                        isRunning = false,
+                        remainingSeconds = 0,
+                        lastEvent = "Session complete"
+                    )
+                    persistCompletedSession(current.copy(isRunning = false, remainingSeconds = 0), "timer")
+                    _gameModeEnabled.value = false
+                    break
+                }
+
+                _gameSession.value = current.copy(remainingSeconds = nextRemaining)
+            }
+        }
+    }
+
+    fun endGameSession(resetOnly: Boolean = false) {
+        gameSessionJob?.cancel()
+        gameSessionJob = null
+        val current = _gameSession.value
+        if (!resetOnly) {
+            persistCompletedSession(current.copy(isRunning = false), "manual")
+        }
+        _gameSession.value = if (resetOnly) {
+            GameSessionState()
+        } else {
+            current.copy(
+                isRunning = false,
+                lastEvent = current.lastEvent ?: "Game off"
+            )
+        }
+        if (resetOnly) {
+            gameSessionStartedAtMs = null
+        }
+    }
+
+    fun onPrimaryTargetTapped(objectId: String, context: Context) {
+        if (_gameModeEnabled.value && _gameSession.value.isRunning) {
+            registerGameHit(objectId)
+        } else {
+            snapAndAutoCapture(objectId, context)
+        }
+    }
+
+    fun onPrimaryEmptyTapped() {
+        if (_gameModeEnabled.value && _gameSession.value.isRunning) {
+            registerGameMiss()
+        } else {
+            showUnidentifiedSheet()
+        }
+    }
+
+    private fun registerGameHit(objectId: String) {
+        if (!canFireGameShot()) return
+        val current = _gameSession.value
+        if (!current.isRunning) return
+
+        val target = screenPositions.value.firstOrNull { it.skyObject.id == objectId }
+        val confidence = target?.skyObject?.confidence ?: 0.5f
+        val distanceMeters = target?.distanceMeters ?: 1000.0
+        val points = GameModeEngine.pointsForHit(confidence, distanceMeters, current.streak)
+
+        val label = when (val obj = target?.skyObject) {
+            is Aircraft -> obj.callsign ?: obj.icaoHex
+            is Drone -> obj.droneId.take(12)
+            else -> objectId
+        }
+
+        val nextStreak = current.streak + 1
+        _gameSession.value = current.copy(
+            score = current.score + points,
+            shots = current.shots + 1,
+            hits = current.hits + 1,
+            misses = current.misses,
+            streak = nextStreak,
+            bestStreak = maxOf(current.bestStreak, nextStreak),
+            lastEvent = "Hit $label +$points"
+        )
+    }
+
+    private fun registerGameMiss() {
+        if (!canFireGameShot()) return
+        val current = _gameSession.value
+        if (!current.isRunning) return
+
+        _gameSession.value = current.copy(
+            shots = current.shots + 1,
+            hits = current.hits,
+            misses = current.misses + 1,
+            streak = 0,
+            lastEvent = "Miss"
+        )
+    }
+
+    private fun canFireGameShot(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastGameShotMs < GAME_SHOT_COOLDOWN_MS) {
+            return false
+        }
+        lastGameShotMs = now
+        return true
+    }
+
+    private fun persistCompletedSession(session: GameSessionState, exitReason: String) {
+        val endedAt = System.currentTimeMillis()
+        val startedAt = gameSessionStartedAtMs ?: endedAt
+        val durationSeconds = ((endedAt - startedAt) / 1000L).toInt().coerceAtLeast(1)
+        val entity = GameSessionEntity(
+            startedAt = startedAt,
+            endedAt = endedAt,
+            durationSeconds = durationSeconds,
+            score = session.score,
+            shots = session.shots,
+            hits = session.hits,
+            misses = session.misses,
+            bestStreak = session.bestStreak,
+            accuracyPercent = session.accuracyPercent,
+            exitReason = exitReason
+        )
+
+        gameSessionStartedAtMs = null
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                gameSessionRepository.saveSession(entity)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to persist gameplay session", e)
+            }
+        }
     }
 
     val detectedDrones: StateFlow<List<Drone>> = skyObjectRepository.skyObjects
@@ -1440,6 +1623,11 @@ class ArViewModel @Inject constructor(
      * compass-math and marks status as UNAVAILABLE.
      */
     private fun initArCore(activity: Activity?) {
+        if (!ENABLE_ARCORE_ORIENTATION) {
+            _arCoreStatus.value = ArCoreStatus.UNAVAILABLE
+            return
+        }
+
         if (activity == null) {
             Log.w(TAG, "No Activity provided, cannot initialize ARCore session")
             _arCoreStatus.value = ArCoreStatus.UNAVAILABLE
@@ -1657,7 +1845,12 @@ class ArViewModel @Inject constructor(
     }
 
     override fun onCleared() {
+        val currentSession = _gameSession.value
+        if (currentSession.isRunning) {
+            persistCompletedSession(currentSession.copy(isRunning = false), "app_exit")
+        }
         super.onCleared()
+        gameSessionJob?.cancel()
         stopSensors()
         // Remove zoom observer to prevent leak
         cameraRef?.cameraInfo?.zoomState?.let { liveData ->

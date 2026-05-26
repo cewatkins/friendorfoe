@@ -2,7 +2,9 @@ package com.friendorfoe.presentation.history
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.friendorfoe.data.local.GameSessionEntity
 import com.friendorfoe.data.local.HistoryEntity
+import com.friendorfoe.data.repository.GameSessionRepository
 import com.friendorfoe.data.repository.HistoryRepository
 import com.friendorfoe.domain.model.FilterState
 import com.friendorfoe.domain.usecase.FilterEngine
@@ -28,7 +30,8 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class HistoryViewModel @Inject constructor(
-    private val historyRepository: HistoryRepository
+    private val historyRepository: HistoryRepository,
+    private val gameSessionRepository: GameSessionRepository
 ) : ViewModel() {
 
     companion object {
@@ -63,6 +66,14 @@ class HistoryViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyMap()
     )
+
+    val recentGameSessions: StateFlow<List<GameSessionEntity>> =
+        gameSessionRepository.getTopSessions(limit = 10)
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
 
     /**
      * Groups history entries by date, using friendly labels for recent dates.

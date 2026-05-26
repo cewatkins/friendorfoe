@@ -14,14 +14,15 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * aircraft metadata for offline use.
  */
 @Database(
-    entities = [HistoryEntity::class, TrackingEntity::class],
-    version = 4,
+    entities = [HistoryEntity::class, TrackingEntity::class, GameSessionEntity::class],
+    version = 5,
     exportSchema = true
 )
 abstract class FriendOrFoeDatabase : RoomDatabase() {
 
     abstract fun historyDao(): HistoryDao
     abstract fun trackingDao(): TrackingDao
+    abstract fun gameSessionDao(): GameSessionDao
 
     companion object {
         private const val DATABASE_NAME = "friendorfoe.db"
@@ -44,13 +45,38 @@ abstract class FriendOrFoeDatabase : RoomDatabase() {
             }
         }
 
+        /** Migration from v4 to v5: add local gameplay session persistence table. */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `game_sessions` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `started_at` INTEGER NOT NULL,
+                        `ended_at` INTEGER NOT NULL,
+                        `duration_seconds` INTEGER NOT NULL,
+                        `score` INTEGER NOT NULL,
+                        `shots` INTEGER NOT NULL,
+                        `hits` INTEGER NOT NULL,
+                        `misses` INTEGER NOT NULL,
+                        `best_streak` INTEGER NOT NULL,
+                        `accuracy_percent` INTEGER NOT NULL,
+                        `exit_reason` TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_game_sessions_ended_at` ON `game_sessions` (`ended_at`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_game_sessions_score` ON `game_sessions` (`score`)")
+            }
+        }
+
         fun create(context: Context): FriendOrFoeDatabase {
             return Room.databaseBuilder(
                 context.applicationContext,
                 FriendOrFoeDatabase::class.java,
                 DATABASE_NAME
             )
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
         }
     }
