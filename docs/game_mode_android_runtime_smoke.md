@@ -70,6 +70,8 @@ adb shell run-as com.friendorfoe \
 
 ## Notes
 
+- Gameplay guide: `docs/game_mode_how_to_play.md`
+
 - If multiple adb targets are connected, use a specific serial:
 
 ```bash

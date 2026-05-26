@@ -320,6 +320,8 @@ fun ArViewScreen(
         GameModeHud(
             gameModeEnabled = gameModeEnabled,
             gameSession = gameSession,
+            visibleTargetCount = screenPositions.size,
+            visibleAdsbTargetCount = screenPositions.count { it.skyObject is Aircraft },
             onToggle = { viewModel.toggleGameMode() },
             onRestart = { viewModel.startGameSession() },
             onStop = { viewModel.disableGameMode() },
@@ -824,6 +826,8 @@ fun ArViewScreen(
 private fun GameModeHud(
     gameModeEnabled: Boolean,
     gameSession: GameSessionState,
+    visibleTargetCount: Int,
+    visibleAdsbTargetCount: Int,
     onToggle: () -> Unit,
     onRestart: () -> Unit,
     onStop: () -> Unit,
@@ -863,6 +867,21 @@ private fun GameModeHud(
                     text = "Final ${gameSession.accuracyPercent}%",
                     color = Color(0xFF80DEEA),
                     fontSize = 11.sp
+                )
+            }
+
+            val hint = when {
+                visibleTargetCount == 0 -> "No live targets. Pan sky or tap empty space for unknowns."
+                visibleAdsbTargetCount == 0 -> "No ADS-B aircraft now. Drone/visual targets still score."
+                visibleAdsbTargetCount < 3 -> "Few ADS-B targets. Sweep horizon for more contacts."
+                else -> null
+            }
+            hint?.let {
+                Text(
+                    text = it,
+                    color = Color(0xFFB3E5FC),
+                    fontSize = 10.sp,
+                    lineHeight = 12.sp
                 )
             }
         }
