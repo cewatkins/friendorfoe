@@ -127,6 +127,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 أو قم بتنزيل أحدث APK مبني مسبقاً من [**GitHub Releases**](https://github.com/lnxgod/friendorfoe/releases).
 
+Current execution track for this repo is Android-only validation. If you are following that plan, skip backend setup and continue with Android build, install, and runtime smoke checks.
+
 ### إعداد الخادم الخلفي (اختياري — يفعّل الإثراء)
 
 يضيف الخادم الخلفي صور الطائرات، وأسماء شركات الطيران، والبحث عن التسجيل، ومعلومات المسار. **يتطلب Python 3.11+ واختيارياً Redis للتخزين المؤقت.**

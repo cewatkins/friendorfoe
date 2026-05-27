@@ -59,6 +59,11 @@ fun FriendOrFoeNavGraph(
                     onObjectTapped = { objectId ->
                         navController.navigate(Screen.Detail.createRoute(objectId))
                     },
+                    onOpenAircraftList = {
+                        navController.navigate(Screen.ListView.route) {
+                            launchSingleTop = true
+                        }
+                    },
                     viewModel = arViewModel
                 )
             }

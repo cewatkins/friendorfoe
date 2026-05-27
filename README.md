@@ -243,6 +243,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 Or download the latest pre-built APK from [**GitHub Releases**](https://github.com/lnxgod/friendorfoe/releases).
 
+Current execution track for this repo is Android-only validation. If you are following that plan, skip backend setup and continue with Android build, install, and runtime smoke checks.
+
 ### Backend Setup (Optional for Android — required for ESP32 sensor network)
 
 The backend serves two roles:

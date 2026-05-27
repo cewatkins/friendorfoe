@@ -127,6 +127,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ან ჩამოტვირთეთ უახლესი წინასწარ აგებული APK [**GitHub Releases**](https://github.com/lnxgod/friendorfoe/releases)-დან.
 
+Current execution track for this repo is Android-only validation. If you are following that plan, skip backend setup and continue with Android build, install, and runtime smoke checks.
+
 ### ბექენდის დაყენება (არჩევითი — ამატებს გამდიდრებას)
 
 ბექენდი ამატებს თვითმფრინავების ფოტოებს, ავიახაზების სახელებს, რეგისტრაციის ძიებას და მარშრუტის ინფორმაციას. **საჭიროებს Python 3.11+ და სურვილისამებრ Redis-ს ქეშირებისთვის.**

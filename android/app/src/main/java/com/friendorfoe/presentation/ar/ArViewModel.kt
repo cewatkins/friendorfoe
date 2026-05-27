@@ -47,6 +47,7 @@ import com.friendorfoe.domain.model.Drone
 import com.friendorfoe.domain.model.ObjectCategory
 import com.friendorfoe.domain.model.Position
 import com.friendorfoe.sensor.ArCoreOrientationProvider
+import com.friendorfoe.sensor.ArTestAlignmentStore
 import com.friendorfoe.sensor.CameraFovCalculator
 import com.friendorfoe.sensor.DeviceOrientation
 import com.friendorfoe.sensor.ScreenPosition
@@ -107,6 +108,7 @@ class ArViewModel @Inject constructor(
     private val gameSessionRepository: GameSessionRepository,
     val aiClassifier: AiClassifier,
     val trainingDataCollector: TrainingDataCollector,
+    private val arTestAlignmentStore: ArTestAlignmentStore,
     @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
@@ -123,7 +125,7 @@ class ArViewModel @Inject constructor(
         private const val LOCATION_UPDATE_DISTANCE_M = 10f
 
         private const val GAME_SESSION_DURATION_SECONDS = 120
-        private const val GAME_SHOT_COOLDOWN_MS = 250L
+        private const val GAME_SHOT_COOLDOWN_MS = 160L
     }
 
     /** AI classification result for current visual detection */
@@ -418,7 +420,8 @@ class ArViewModel @Inject constructor(
         gameSessionJob = null
         val current = _gameSession.value
         if (!resetOnly) {
-            persistCompletedSession(current.copy(isRunning = false), "manual")
+            val exitReason = if (current.remainingSeconds <= 0) "timer" else "manual"
+            persistCompletedSession(current.copy(isRunning = false), exitReason)
         }
         _gameSession.value = if (resetOnly) {
             GameSessionState()
@@ -1191,11 +1194,22 @@ class ArViewModel @Inject constructor(
         }
     }
 
+    private val orientationWithTestBias: StateFlow<DeviceOrientation> = combine(
+        orientation,
+        arTestAlignmentStore.manualBiasDegrees
+    ) { orient, manualTestBias ->
+        orient.copy(azimuthDegrees = orient.azimuthDegrees + manualTestBias)
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = DeviceOrientation()
+    )
+
     // --- Screen positions (combined from orientation + sky objects + visual detections) ---
 
     val screenPositions: StateFlow<List<ScreenPosition>> = combine(
         frameClockFlow,
-        orientation,
+        orientationWithTestBias,
         skyObjectRepository.skyObjects,
         _userPosition,
         visualDetectionAnalyzer.detections

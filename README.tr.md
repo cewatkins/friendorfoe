@@ -126,6 +126,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Veya en son önceden derlenmiş APK'yı [**GitHub Releases**](https://github.com/lnxgod/friendorfoe/releases) sayfasından indirin.
+Current execution track for this repo is Android-only validation. If you are following that plan, skip backend setup and continue with Android build, install, and runtime smoke checks.
 
 ### Arka Uç Kurulumu (İsteğe Bağlı — zenginleştirmeyi etkinleştirir)
 

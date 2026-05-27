@@ -2,7 +2,6 @@ package com.friendorfoe.presentation
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -68,7 +67,8 @@ fun FriendOrFoeApp() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
-    // Request Location + BT + WiFi permissions at app startup (not Camera — that stays AR-only)
+    // Request only core location at startup.
+    // Nearby/local-device permissions are no longer requested on app launch.
     val startupPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { /* grant results handled by individual screens */ }
@@ -79,25 +79,6 @@ fun FriendOrFoeApp() {
                 != PackageManager.PERMISSION_GRANTED
             ) {
                 add(Manifest.permission.ACCESS_FINE_LOCATION)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN)
-                    != PackageManager.PERMISSION_GRANTED
-                ) {
-                    add(Manifest.permission.BLUETOOTH_SCAN)
-                }
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
-                    != PackageManager.PERMISSION_GRANTED
-                ) {
-                    add(Manifest.permission.BLUETOOTH_CONNECT)
-                }
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.NEARBY_WIFI_DEVICES)
-                    != PackageManager.PERMISSION_GRANTED
-                ) {
-                    add(Manifest.permission.NEARBY_WIFI_DEVICES)
-                }
             }
         }
         if (missing.isNotEmpty()) {

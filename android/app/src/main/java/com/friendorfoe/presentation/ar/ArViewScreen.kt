@@ -23,16 +23,19 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -69,6 +72,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -80,6 +84,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import android.app.Activity
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -91,6 +96,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.unit.IntOffset
 import com.friendorfoe.detection.DarkTargetScore
 import com.friendorfoe.detection.DarkTargetScorer
 import com.friendorfoe.detection.ShapeClass
@@ -114,8 +120,16 @@ import com.friendorfoe.presentation.detail.DetailViewModel
 import com.friendorfoe.presentation.detail.DroneDetailContent
 import com.friendorfoe.presentation.util.categoryBadge
 import com.friendorfoe.presentation.util.categoryColor
+import com.friendorfoe.presentation.util.getAircraftPhotoUrl
 import com.friendorfoe.domain.model.ObjectCategory
 import com.friendorfoe.sensor.ScreenPosition
+import coil.imageLoader
+import coil.compose.AsyncImagePainter
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
+import coil.request.CachePolicy
+import coil.request.ImageRequest
+import androidx.compose.runtime.remember
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -139,6 +153,7 @@ import kotlin.math.sin
 @Composable
 fun ArViewScreen(
     onObjectTapped: (String) -> Unit,
+    onOpenAircraftList: () -> Unit = {},
     viewModel: ArViewModel = hiltViewModel(),
     detailViewModel: DetailViewModel = hiltViewModel()
 ) {
@@ -259,6 +274,7 @@ fun ArViewScreen(
             unmatchedVisuals = unmatchedVisuals,
             classifiedUnknowns = classifiedUnknowns,
             darkTargetScores = darkTargetScores,
+            gameModeEnabled = gameModeEnabled,
             lockedObjectId = lockedObjectId,
             lockedScreenPosition = lockedScreenPosition,
             orientation = orientation,
@@ -320,11 +336,13 @@ fun ArViewScreen(
         GameModeHud(
             gameModeEnabled = gameModeEnabled,
             gameSession = gameSession,
-            visibleTargetCount = screenPositions.size,
-            visibleAdsbTargetCount = screenPositions.count { it.skyObject is Aircraft },
+            visibleTargetCount = screenPositions.count { it.isInView },
+            visibleAdsbTargetCount = screenPositions.count { it.isInView && it.skyObject is Aircraft },
+            totalAircraftCount = aircraftCount,
             onToggle = { viewModel.toggleGameMode() },
             onRestart = { viewModel.startGameSession() },
             onStop = { viewModel.disableGameMode() },
+            onOpenAircraftList = onOpenAircraftList,
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = 56.dp, end = 16.dp)
@@ -828,9 +846,11 @@ private fun GameModeHud(
     gameSession: GameSessionState,
     visibleTargetCount: Int,
     visibleAdsbTargetCount: Int,
+    totalAircraftCount: Int,
     onToggle: () -> Unit,
     onRestart: () -> Unit,
     onStop: () -> Unit,
+    onOpenAircraftList: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -871,6 +891,8 @@ private fun GameModeHud(
             }
 
             val hint = when {
+                visibleTargetCount == 0 && totalAircraftCount > 0 ->
+                    "No live targets. Practice targets are shown from nearby aircraft."
                 visibleTargetCount == 0 -> "No live targets. Pan sky or tap empty space for unknowns."
                 visibleAdsbTargetCount == 0 -> "No ADS-B aircraft now. Drone/visual targets still score."
                 visibleAdsbTargetCount < 3 -> "Few ADS-B targets. Sweep horizon for more contacts."
@@ -884,6 +906,7 @@ private fun GameModeHud(
                     lineHeight = 12.sp
                 )
             }
+
         }
 
         HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
@@ -906,6 +929,16 @@ private fun GameModeHud(
                         Text(text = "Restart", color = Color(0xFFA5D6A7), fontSize = 11.sp)
                     }
                 }
+            }
+        }
+
+        if (totalAircraftCount > 0 && (!gameModeEnabled || visibleAdsbTargetCount == 0)) {
+            TextButton(onClick = onOpenAircraftList) {
+                Text(
+                    text = "Open Airplanes (${totalAircraftCount})",
+                    color = Color(0xFF80DEEA),
+                    fontSize = 11.sp
+                )
             }
         }
 
@@ -1038,6 +1071,7 @@ private fun ArOverlay(
     unmatchedVisuals: List<VisualDetection>,
     classifiedUnknowns: List<ClassifiedVisualDetection>,
     darkTargetScores: List<DarkTargetScore>,
+    gameModeEnabled: Boolean,
     lockedObjectId: String?,
     lockedScreenPosition: ScreenPosition?,
     orientation: com.friendorfoe.sensor.DeviceOrientation,
@@ -1051,6 +1085,35 @@ private fun ArOverlay(
     // Filter to only in-view objects
     val visiblePositions = remember(screenPositions) {
         screenPositions.filter { it.isInView }
+    }
+
+    val practiceSeedPositions = listOf(
+        0.18f to 0.26f,
+        0.40f to 0.22f,
+        0.62f to 0.22f,
+        0.82f to 0.26f,
+        0.30f to 0.40f,
+        0.70f to 0.40f
+    )
+
+    // When nothing is in view, show deterministic practice targets from nearby objects
+    // so gameplay can still be tested on this same screen.
+    val renderPositions = remember(screenPositions, visiblePositions, gameModeEnabled) {
+        if (!gameModeEnabled || visiblePositions.isNotEmpty()) {
+            visiblePositions
+        } else {
+            screenPositions
+                .sortedBy { it.distanceMeters }
+                .take(practiceSeedPositions.size)
+                .mapIndexed { index, sp ->
+                    val (x, y) = practiceSeedPositions[index]
+                    sp.copy(
+                        screenX = x,
+                        screenY = y,
+                        isInView = true
+                    )
+                }
+        }
     }
 
     // Build lookup for classified unknowns by tracking ID (skip null IDs)
@@ -1081,7 +1144,7 @@ private fun ArOverlay(
     )
 
     // Animate each label's position for smooth movement
-    val animatedPositions = visiblePositions.map { pos ->
+    val animatedPositions = renderPositions.map { pos ->
         val animatedX by animateFloatAsState(
             targetValue = pos.screenX,
             animationSpec = tween(durationMillis = 150),
@@ -1104,11 +1167,46 @@ private fun ArOverlay(
     // Keep detection references for visual tap targets
     var visualHitDetections by remember { mutableStateOf<Map<String, VisualDetection>>(emptyMap()) }
 
-    Canvas(
-        modifier = modifier
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { offset ->
+    val context = LocalContext.current
+    val imageLoader = remember(context) { context.imageLoader }
+    val preloadImageUrls = remember(renderPositions, gameModeEnabled) {
+        if (!gameModeEnabled) {
+            emptyList()
+        } else {
+            renderPositions.mapNotNull { sp ->
+                val aircraft = sp.skyObject as? Aircraft ?: return@mapNotNull null
+                aircraft.photoUrl ?: getAircraftPhotoUrl(aircraft.aircraftType)
+            }.distinct().take(8)
+        }
+    }
+
+    LaunchedEffect(preloadImageUrls) {
+        preloadImageUrls.forEach { imageUrl ->
+            imageLoader.enqueue(
+                ImageRequest.Builder(context)
+                    .data(imageUrl)
+                    .size(256, 256)
+                    .memoryCachePolicy(CachePolicy.ENABLED)
+                    .diskCachePolicy(CachePolicy.ENABLED)
+                    .networkCachePolicy(CachePolicy.ENABLED)
+                    .build()
+            )
+        }
+    }
+
+    BoxWithConstraints(modifier = modifier) {
+        val canvasWidthPx = constraints.maxWidth.toFloat()
+        val canvasHeightPx = constraints.maxHeight.toFloat()
+        val resolvedPositions = remember(animatedPositions, canvasWidthPx, canvasHeightPx) {
+            resolveOverlaps(animatedPositions, canvasWidthPx, canvasHeightPx)
+        }
+
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { offset ->
                         // Check if tap hit the reticle (locked object in view) → unlock
                         if (lockedObjectId != null && lockedScreenPosition?.isInView == true) {
                             val reticleX = lockedScreenPosition.screenX * size.width
@@ -1154,7 +1252,8 @@ private fun ArOverlay(
                                 val dx = offset.x - cx
                                 val dy = offset.y - cy
                                 val dist = kotlin.math.sqrt(dx * dx + dy * dy)
-                                if (dist < 120f) {
+                                val tapAssistRadiusPx = if (gameModeEnabled) 170f else 120f
+                                if (dist < tapAssistRadiusPx) {
                                     if (nearest.objectId.startsWith("visual_")) {
                                         val detection = visualHitDetections[nearest.objectId]
                                         if (detection != null) onVisualTapped(detection)
@@ -1169,7 +1268,7 @@ private fun ArOverlay(
                         // Nothing nearby — user tapped empty space
                         onEmptySpaceTapped()
                     },
-                    onLongPress = { offset ->
+                        onLongPress = { offset ->
                         // Long-press on a label → lock-on
                         labelRects.forEach { target ->
                             if (target.rect.contains(offset) && !target.objectId.startsWith("visual_")) {
@@ -1178,13 +1277,13 @@ private fun ArOverlay(
                             }
                         }
                     }
-                )
-            }
-    ) {
-        val canvasWidth = size.width
-        val canvasHeight = size.height
-        val hitTargets = mutableListOf<LabelHitTarget>()
-        val detectionRefs = mutableMapOf<String, VisualDetection>()
+                    )
+                }
+        ) {
+            val canvasWidth = size.width
+            val canvasHeight = size.height
+            val hitTargets = mutableListOf<LabelHitTarget>()
+            val detectionRefs = mutableMapOf<String, VisualDetection>()
 
         // Layer 1: Bounding boxes for matched radio objects
         animatedPositions.forEach { labelInfo ->
@@ -1233,74 +1332,90 @@ private fun ArOverlay(
             detectionRefs[visualId] = visual
         }
 
-        // Layer 3: Radio labels on top (with overlap avoidance)
-        val resolvedPositions = resolveOverlaps(animatedPositions, canvasWidth, canvasHeight)
+            // Layer 3: Radio labels on top (with overlap avoidance)
+            if (!gameModeEnabled) {
+                resolvedPositions.forEach { labelInfo ->
+                    val isLocked = lockedObjectId != null &&
+                        labelInfo.screenPosition.skyObject.id == lockedObjectId
+                    val isDimmed = lockedObjectId != null && !isLocked
+                    val rect = drawLabel(
+                        labelInfo = labelInfo,
+                        canvasWidth = canvasWidth,
+                        canvasHeight = canvasHeight,
+                        useGameIcon = false,
+                        isLocked = isLocked,
+                        isDimmed = isDimmed,
+                        pulseAlpha = pulseAlpha
+                    )
+                    hitTargets.add(
+                        LabelHitTarget(
+                            objectId = labelInfo.screenPosition.skyObject.id,
+                            rect = rect
+                        )
+                    )
+                }
+            }
 
-        resolvedPositions.forEach { labelInfo ->
-            val isLocked = lockedObjectId != null &&
-                labelInfo.screenPosition.skyObject.id == lockedObjectId
-            val isDimmed = lockedObjectId != null && !isLocked
-            val rect = drawLabel(
-                labelInfo = labelInfo,
-                canvasWidth = canvasWidth,
-                canvasHeight = canvasHeight,
-                isLocked = isLocked,
-                isDimmed = isDimmed,
-                pulseAlpha = pulseAlpha
-            )
-            hitTargets.add(
-                LabelHitTarget(
-                    objectId = labelInfo.screenPosition.skyObject.id,
-                    rect = rect
-                )
-            )
-        }
+            // Layer 4: Off-screen directional arrows for nearby objects outside FOV
+            val offScreenObjects = screenPositions.filter {
+                !it.isInView && it.distanceMeters > 0 && it.distanceMeters <= 13_000.0
+            }.sortedBy { it.distanceMeters }.take(8)
 
-        // Layer 4: Off-screen directional arrows for nearby objects outside FOV
-        val offScreenObjects = screenPositions.filter {
-            !it.isInView && it.distanceMeters > 0 && it.distanceMeters <= 13_000.0
-        }.sortedBy { it.distanceMeters }.take(8)
-
-        offScreenObjects.forEach { sp ->
-            val arrowRect = drawEdgeArrow(
-                screenPosition = sp,
-                canvasWidth = canvasWidth,
-                canvasHeight = canvasHeight
-            )
-            hitTargets.add(
-                LabelHitTarget(
-                    objectId = sp.skyObject.id,
-                    rect = arrowRect
-                )
-            )
-        }
-
-        // Layer 5: Lock-on reticle or guidance arrow
-        if (lockedObjectId != null) {
-            val lockedSp = lockedScreenPosition
-            if (lockedSp != null && lockedSp.isInView) {
-                // Object is in view — draw animated reticle
-                drawReticle(
-                    centerX = lockedSp.screenX * canvasWidth,
-                    centerY = lockedSp.screenY * canvasHeight,
-                    pulseAlpha = pulseAlpha
-                )
-            } else if (lockedSp != null) {
-                // Object is off-screen — draw guidance arrow at center
-                drawGuidanceArrow(
-                    targetBearing = lockedSp.bearingDegrees,
-                    targetElevation = lockedSp.elevationDegrees,
-                    currentAzimuth = orientation.azimuthDegrees,
-                    currentPitch = orientation.pitchDegrees,
+            offScreenObjects.forEach { sp ->
+                val arrowRect = drawEdgeArrow(
+                    screenPosition = sp,
                     canvasWidth = canvasWidth,
-                    canvasHeight = canvasHeight,
-                    pulseAlpha = pulseAlpha
+                    canvasHeight = canvasHeight
+                )
+                hitTargets.add(
+                    LabelHitTarget(
+                        objectId = sp.skyObject.id,
+                        rect = arrowRect
+                    )
+                )
+            }
+
+            // Layer 5: Lock-on reticle or guidance arrow
+            if (lockedObjectId != null) {
+                val lockedSp = lockedScreenPosition
+                if (lockedSp != null && lockedSp.isInView) {
+                    // Object is in view — draw animated reticle
+                    drawReticle(
+                        centerX = lockedSp.screenX * canvasWidth,
+                        centerY = lockedSp.screenY * canvasHeight,
+                        pulseAlpha = pulseAlpha
+                    )
+                } else if (lockedSp != null) {
+                    // Object is off-screen — draw guidance arrow at center
+                    drawGuidanceArrow(
+                        targetBearing = lockedSp.bearingDegrees,
+                        targetElevation = lockedSp.elevationDegrees,
+                        currentAzimuth = orientation.azimuthDegrees,
+                        currentPitch = orientation.pitchDegrees,
+                        canvasWidth = canvasWidth,
+                        canvasHeight = canvasHeight,
+                        pulseAlpha = pulseAlpha
+                    )
+                }
+            }
+
+            labelRects = hitTargets
+            visualHitDetections = detectionRefs
+        }
+
+        if (gameModeEnabled) {
+            resolvedPositions.forEach { labelInfo ->
+                val isLocked = lockedObjectId != null &&
+                    labelInfo.screenPosition.skyObject.id == lockedObjectId
+                GameTargetImageIcon(
+                    labelInfo = labelInfo,
+                    canvasWidthPx = canvasWidthPx,
+                    canvasHeightPx = canvasHeightPx,
+                    isLocked = isLocked,
+                    onTap = { onLabelTapped(labelInfo.screenPosition.skyObject.id) }
                 )
             }
         }
-
-        labelRects = hitTargets
-        visualHitDetections = detectionRefs
     }
 }
 
@@ -1313,6 +1428,7 @@ private fun DrawScope.drawLabel(
     labelInfo: AnimatedLabelData,
     canvasWidth: Float,
     canvasHeight: Float,
+    useGameIcon: Boolean = false,
     isLocked: Boolean = false,
     isDimmed: Boolean = false,
     pulseAlpha: Float = 1f
@@ -1328,6 +1444,64 @@ private fun DrawScope.drawLabel(
         else -> 1f
     }
     val dimFactor = (if (isDimmed) 0.4f else 1f) * confidenceDim
+
+    if (useGameIcon) {
+        val iconSize = if (isLocked) 84f else 72f
+        val centerX = labelInfo.resolvedX * canvasWidth
+        val centerY = labelInfo.resolvedY * canvasHeight
+        val left = (centerX - iconSize / 2f).coerceIn(4f, canvasWidth - iconSize - 4f)
+        val top = (centerY - iconSize / 2f).coerceIn(4f, canvasHeight - iconSize - 4f)
+
+        val bgColor = Color.Black.copy(alpha = 0.65f * dimFactor)
+        val borderColor = if (isLocked) {
+            Color(0xFF00BCD4).copy(alpha = pulseAlpha)
+        } else {
+            color.copy(alpha = 0.9f * dimFactor)
+        }
+
+        drawRoundRect(
+            color = bgColor,
+            topLeft = Offset(left, top),
+            size = Size(iconSize, iconSize),
+            cornerRadius = CornerRadius(12f, 12f)
+        )
+
+        drawRoundRect(
+            color = borderColor,
+            topLeft = Offset(left, top),
+            size = Size(iconSize, iconSize),
+            cornerRadius = CornerRadius(12f, 12f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = if (isLocked) 3f else 2f)
+        )
+
+        val glyph = when (skyObject) {
+            is Aircraft -> "✈"
+            is Drone -> "◉"
+        }
+        val shortName = getLabelText(skyObject).take(6)
+
+        drawContext.canvas.nativeCanvas.apply {
+            val glyphPaint = android.graphics.Paint().apply {
+                this.color = android.graphics.Color.WHITE
+                textSize = 34f
+                isAntiAlias = true
+                textAlign = android.graphics.Paint.Align.CENTER
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            }
+            drawText(glyph, left + iconSize / 2f, top + iconSize / 2f + 12f, glyphPaint)
+
+            val namePaint = android.graphics.Paint().apply {
+                this.color = android.graphics.Color.argb((255 * dimFactor).toInt(), 255, 255, 255)
+                textSize = 14f
+                isAntiAlias = true
+                textAlign = android.graphics.Paint.Align.CENTER
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            }
+            drawText(shortName, left + iconSize / 2f, top + iconSize - 8f, namePaint)
+        }
+
+        return Rect(left, top, left + iconSize, top + iconSize)
+    }
 
     // Label dimensions
     val labelWidth = 240f
@@ -1547,6 +1721,141 @@ private fun DrawScope.drawLabel(
     }
 
     return Rect(left, top, left + labelWidth, top + labelHeight)
+}
+
+@Composable
+private fun GameTargetImageIcon(
+    labelInfo: AnimatedLabelData,
+    canvasWidthPx: Float,
+    canvasHeightPx: Float,
+    isLocked: Boolean,
+    onTap: () -> Unit
+) {
+    val skyObject = labelInfo.screenPosition.skyObject
+    val baseSizePx = if (isLocked) 84f else 72f
+    val distanceScale = when {
+        labelInfo.screenPosition.distanceMeters < 1_500.0 -> 1.18f
+        labelInfo.screenPosition.distanceMeters < 4_000.0 -> 1.06f
+        labelInfo.screenPosition.distanceMeters < 9_000.0 -> 0.95f
+        else -> 0.86f
+    }
+    val sizePx = (baseSizePx * distanceScale).coerceIn(64f, 96f)
+    val sizeDp = sizePx.dp
+    val centerX = labelInfo.resolvedX * canvasWidthPx
+    val centerY = labelInfo.resolvedY * canvasHeightPx
+    val left = (centerX - sizePx / 2f).coerceIn(4f, canvasWidthPx - sizePx - 4f)
+    val top = (centerY - sizePx / 2f).coerceIn(4f, canvasHeightPx - sizePx - 4f)
+
+    val context = LocalContext.current
+    val imageUrl = when (skyObject) {
+        is Aircraft -> skyObject.photoUrl ?: getAircraftPhotoUrl(skyObject.aircraftType)
+        else -> null
+    }
+    val imageRequest = remember(imageUrl) {
+        imageUrl?.let {
+            ImageRequest.Builder(context)
+                .data(it)
+                .size(256, 256)
+                .crossfade(false)
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .networkCachePolicy(CachePolicy.ENABLED)
+                .build()
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .offset { IntOffset(left.roundToInt(), top.roundToInt()) }
+            .size(sizeDp)
+            .border(
+                width = if (isLocked) 3.dp else 2.dp,
+                color = if (isLocked) Color(0xFF00BCD4) else Color.White.copy(alpha = 0.9f),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.Black.copy(alpha = 0.56f))
+            .clickable(onClick = onTap),
+        contentAlignment = Alignment.Center
+    ) {
+        if (imageRequest != null) {
+            SubcomposeAsyncImage(
+                model = imageRequest,
+                contentDescription = "Target image",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                when (painter.state) {
+                    is AsyncImagePainter.State.Success -> {
+                        SubcomposeAsyncImageContent()
+                    }
+                    is AsyncImagePainter.State.Loading -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                        ) {
+                            Text(
+                                text = if (skyObject is Aircraft) "✈" else "◉",
+                                color = categoryColor(skyObject.category),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 24.sp,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                            Text(
+                                text = "...",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(4.dp)
+                                    .background(
+                                        color = Color(0xCC00BCD4),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    else -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                        ) {
+                            Text(
+                                text = if (skyObject is Aircraft) "✈" else "◉",
+                                color = categoryColor(skyObject.category),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 24.sp,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                            Text(
+                                text = "NO",
+                                color = Color(0xFFFFCDD2),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(4.dp)
+                                    .background(
+                                        color = Color(0xCC7F1D1D),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            Text(
+                text = if (skyObject is Aircraft) "✈" else "◉",
+                color = categoryColor(skyObject.category),
+                fontWeight = FontWeight.Bold,
+                fontSize = 28.sp
+            )
+        }
+    }
 }
 
 /**

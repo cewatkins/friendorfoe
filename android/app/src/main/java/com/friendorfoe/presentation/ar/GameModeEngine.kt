@@ -19,16 +19,16 @@ data class GameSessionState(
 }
 
 object GameModeEngine {
-    private const val BASE_HIT_SCORE = 100
-    private const val MAX_CONFIDENCE_BONUS = 220
-    private const val MAX_DISTANCE_BONUS = 120
+    private const val BASE_HIT_SCORE = 120
+    private const val MAX_CONFIDENCE_BONUS = 180
+    private const val MAX_DISTANCE_BONUS = 140
     private const val DISTANCE_BONUS_CEILING_METERS = 8_000.0
 
     fun pointsForHit(confidence: Float, distanceMeters: Double, streakBeforeHit: Int): Int {
         val normalizedConfidence = confidence.coerceIn(0f, 1f)
         val normalizedDistance = (distanceMeters.coerceIn(0.0, DISTANCE_BONUS_CEILING_METERS) /
             DISTANCE_BONUS_CEILING_METERS).toFloat()
-        val streakMultiplier = 1.0f + (min(streakBeforeHit, 10) * 0.12f)
+        val streakMultiplier = 1.0f + (min(streakBeforeHit, 12) * 0.10f)
 
         val baseScore = BASE_HIT_SCORE +
             (normalizedConfidence * MAX_CONFIDENCE_BONUS).roundToInt() +

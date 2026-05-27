@@ -127,6 +127,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 یا وروستی دمخه جوړ شوی APK له [**GitHub Releases**](https://github.com/lnxgod/friendorfoe/releases) څخه ډاونلوډ کړئ.
 
+Current execution track for this repo is Android-only validation. If you are following that plan, skip backend setup and continue with Android build, install, and runtime smoke checks.
+
 ### بیکینډ تنظیم (اختیاري — غنیمت فعالوي)
 
 بیکینډ د الوتکو عکسونه، د هوایي شرکتونو نومونه، د ثبت لټونونه، او د مسیر معلومات زیاتوي. **Python 3.11+ او اختیاری Redis د کیشینګ لپاره اړتیا ده.**

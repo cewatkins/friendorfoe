@@ -17,6 +17,7 @@ import com.friendorfoe.domain.model.FilterState
 import com.friendorfoe.domain.model.Position
 import com.friendorfoe.domain.model.SkyObject
 import com.friendorfoe.domain.usecase.FilterEngine
+import com.friendorfoe.sensor.ArTestAlignmentStore
 import com.friendorfoe.sensor.SensorFusionEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +39,8 @@ class MapViewModel @Inject constructor(
     private val aircraftRepository: AircraftRepository,
     private val locationManager: LocationManager,
     private val sensorFusionEngine: SensorFusionEngine,
-    private val sensorMapApiService: SensorMapApiService
+    private val sensorMapApiService: SensorMapApiService,
+    private val arTestAlignmentStore: ArTestAlignmentStore
 ) : ViewModel() {
 
     companion object {
@@ -124,6 +126,27 @@ class MapViewModel @Inject constructor(
 
     fun selectObject(objectId: String?) {
         _selectedObjectId.value = objectId
+    }
+
+    /**
+     * Testing helper: use a tapped aircraft in the overhead map to derive an AR azimuth correction.
+     */
+    fun applyTestArAlignmentFromAircraft(aircraft: Aircraft): String? {
+        val user = _userPosition.value
+        if (user.latitude == 0.0 && user.longitude == 0.0) return null
+
+        val targetBearing = bearingDegrees(
+            user.latitude,
+            user.longitude,
+            aircraft.position.latitude,
+            aircraft.position.longitude
+        )
+        val currentHeading = compassHeading.value
+        val correction = normalizeAngleDegrees(targetBearing - currentHeading)
+        arTestAlignmentStore.setManualBiasDegrees(correction)
+
+        val label = aircraft.callsign ?: aircraft.icaoHex
+        return "AR alignment set from $label (${correction.toInt()}°)"
     }
 
     fun toggleFollowCompass() {
@@ -276,5 +299,25 @@ class MapViewModel @Inject constructor(
         if (_followCompass.value) {
             sensorFusionEngine.stop()
         }
+    }
+
+    private fun bearingDegrees(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
+        val phi1 = Math.toRadians(lat1)
+        val phi2 = Math.toRadians(lat2)
+        val dLon = Math.toRadians(lon2 - lon1)
+
+        val y = kotlin.math.sin(dLon) * kotlin.math.cos(phi2)
+        val x = kotlin.math.cos(phi1) * kotlin.math.sin(phi2) -
+            kotlin.math.sin(phi1) * kotlin.math.cos(phi2) * kotlin.math.cos(dLon)
+
+        val bearing = Math.toDegrees(kotlin.math.atan2(y, x))
+        return ((bearing + 360.0) % 360.0).toFloat()
+    }
+
+    private fun normalizeAngleDegrees(angle: Float): Float {
+        var value = angle
+        while (value > 180f) value -= 360f
+        while (value < -180f) value += 360f
+        return value
     }
 }

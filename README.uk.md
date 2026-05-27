@@ -127,6 +127,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 Або завантажте останній готовий APK з [**GitHub Releases**](https://github.com/lnxgod/friendorfoe/releases).
 
+Current execution track for this repo is Android-only validation. If you are following that plan, skip backend setup and continue with Android build, install, and runtime smoke checks.
+
 ### Налаштування бекенду (опціонально — вмикає збагачення)
 
 Бекенд додає фотографії літаків, назви авіаліній, пошук реєстрації та інформацію про маршрут. **Потрібен Python 3.11+ та опціонально Redis для кешування.**

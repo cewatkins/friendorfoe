@@ -54,6 +54,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 Կամ ներբեռնեք վերջին APK-ն [**GitHub Releases**](https://github.com/lnxgod/friendorfoe/releases)-ից։
 
+Current execution track for this repo is Android-only validation. If you are following that plan, skip backend setup and continue with Android build, install, and runtime smoke checks.
+
 ---
 
 ## Տեխնոլոգիական փաթեթ

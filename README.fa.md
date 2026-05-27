@@ -127,6 +127,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 یا آخرین APK پیش‌ساخته را از [**GitHub Releases**](https://github.com/lnxgod/friendorfoe/releases) دانلود کنید.
 
+Current execution track for this repo is Android-only validation. If you are following that plan, skip backend setup and continue with Android build, install, and runtime smoke checks.
+
 ### راه‌اندازی بک‌اند (اختیاری — غنی‌سازی را فعال می‌کند)
 
 بک‌اند عکس‌های هواپیما، نام شرکت‌های هواپیمایی، جستجوی ثبت‌نام و اطلاعات مسیر اضافه می‌کند. **به Python 3.11+ و اختیاراً Redis برای کش نیاز دارد.**

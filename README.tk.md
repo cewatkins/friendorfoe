@@ -126,6 +126,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Ýa-da iň soňky öňünden gurlan APK-ny [**GitHub Releases**](https://github.com/lnxgod/friendorfoe/releases) sahypasyndan ýükläp alyň.
+Current execution track for this repo is Android-only validation. If you are following that plan, skip backend setup and continue with Android build, install, and runtime smoke checks.
 
 ### Arka tarapy gurmak (islege bagly — baýlaşdyrmagy açýar)
 

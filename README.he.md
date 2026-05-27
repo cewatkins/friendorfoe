@@ -127,6 +127,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 או הורידו את ה-APK המוכן האחרון מ-[**GitHub Releases**](https://github.com/lnxgod/friendorfoe/releases).
 
+Current execution track for this repo is Android-only validation. If you are following that plan, skip backend setup and continue with Android build, install, and runtime smoke checks.
+
 ### הגדרת עורפי (אופציונלי — מאפשר העשרה)
 
 העורפי מוסיף תמונות מטוסים, שמות חברות תעופה, חיפושי רישום ומידע על מסלולים. **דורש Python 3.11+ ואופציונלית Redis לאחסון מטמון.**

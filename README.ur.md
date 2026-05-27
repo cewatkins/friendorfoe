@@ -127,6 +127,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 یا تازہ ترین پہلے سے بنایا ہوا APK [**GitHub Releases**](https://github.com/lnxgod/friendorfoe/releases) سے ڈاؤن لوڈ کریں۔
 
+Current execution track for this repo is Android-only validation. If you are following that plan, skip backend setup and continue with Android build, install, and runtime smoke checks.
+
 ### بیک اینڈ سیٹ اپ (اختیاری — ڈیٹا بہتری فعال کرتا ہے)
 
 بیک اینڈ طیاروں کی تصاویر، ایئر لائن کے نام، رجسٹریشن تلاش، اور راستے کی معلومات شامل کرتا ہے۔ **Python 3.11+ اور اختیاری طور پر کیشنگ کے لیے Redis درکار ہے۔**

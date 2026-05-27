@@ -107,7 +107,21 @@ class RemoteIdScanner @Inject constructor(
         // Some phones miss ODID packets when service-data filtering is pushed
         // into the controller. Scan unfiltered and parse the FFFA payload here.
         Log.i(TAG, "Starting BLE Remote ID scan (unfiltered compatibility mode)")
-        scanner.startScan(null, scanSettings, callback)
+        try {
+            scanner.startScan(null, scanSettings, callback)
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Missing BLE scan permission; Remote ID scan disabled", e)
+            activeScanCallback = null
+            bleScanner = null
+            close()
+            return@callbackFlow
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start BLE Remote ID scan", e)
+            activeScanCallback = null
+            bleScanner = null
+            close()
+            return@callbackFlow
+        }
 
         awaitClose {
             Log.i(TAG, "Stopping BLE Remote ID scan")

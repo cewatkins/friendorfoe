@@ -242,6 +242,11 @@ fun MapViewScreen(
                             snippet = getMarkerSnippet(obj)
                             icon = createCategoryMarkerDrawable(context, obj.category, color, getHeading(obj))
                             setOnMarkerClickListener { _, _ ->
+                                if (obj is Aircraft) {
+                                    viewModel.applyTestArAlignmentFromAircraft(obj)?.let { msg ->
+                                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                                 viewModel.selectObject(obj.id)
                                 true
                             }
