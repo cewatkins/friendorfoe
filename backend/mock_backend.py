@@ -2,6 +2,7 @@
 import json
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlparse
 
 
@@ -153,6 +154,33 @@ class MockBackendHandler(BaseHTTPRequestHandler):
                 "applied_listener_count": 0,
                 "last_calibration": None,
                 "r_squared": None,
+            })
+            return
+
+        if path == "/diagnostics/sdr":
+            status_path = Path("/tmp/fof_sdr_status.json")
+            if status_path.exists():
+                try:
+                    payload = json.loads(status_path.read_text(encoding="utf-8"))
+                except Exception as exc:
+                    self._send_json(500, {
+                        "ok": False,
+                        "error": f"invalid_status_json:{exc}",
+                    })
+                    return
+
+                self._send_json(200, {
+                    "ok": True,
+                    "source": str(status_path),
+                    "status": payload,
+                })
+                return
+
+            self._send_json(200, {
+                "ok": False,
+                "source": str(status_path),
+                "status": None,
+                "hint": "Run scripts/sdr_sidecar_probe.py to generate status",
             })
             return
 
