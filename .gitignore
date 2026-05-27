@@ -6,6 +6,7 @@
 build/
 android/**/build/
 android/.gradle/
+android/dist/
 
 # Signing
 *.jks

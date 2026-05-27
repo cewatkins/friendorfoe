@@ -277,6 +277,16 @@ docker compose up
 
 The API and dashboard will be available at `http://localhost:8000`. Health check: `http://localhost:8000/health`. Real-time sensor dashboard: `http://localhost:8000/dashboard.html`
 
+### Hardware Deploy Path (Game Mode + ESP32 + Backend)
+
+For the normal hardware-backed flow (backend + ESP32 + Android), use:
+
+```bash
+./scripts/game_mode_hardware_deploy.sh --all --start-backend
+```
+
+This runs backend setup, ESP32 firmware builds, and Android install in one operator workflow. Phase model and acceptance criteria are tracked in `docs/game_mode_esp32_backend_plan.md`.
+
 ### Connecting the App to Your Backend
 
 Update the backend URL in the Android app's network configuration to point to your server's IP address.
