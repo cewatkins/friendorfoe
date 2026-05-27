@@ -2,6 +2,8 @@
 
 This guide explains gameplay flow in the Android AR screen and what to do when nearby ADS-B traffic is low.
 
+For full scoring and shotdown behavior details, see `docs/game_mode_shooting_scoring.md`.
+
 ## Goal
 
 Score as many points as possible before time runs out.
@@ -20,12 +22,21 @@ Score as many points as possible before time runs out.
 2. Misses break streak and reduce accuracy.
 3. Accuracy is calculated as `hits / shots`.
 4. Better confidence, distance context, and streak can affect points.
+5. Targets can be `shot down` and removed from the active AR target pool.
+
+## Shotdown Rules
+
+1. Every hit adds both score and per-target damage progress.
+2. A target is shot down when it reaches either a hit threshold or a points threshold.
+3. Drone targets are lighter: fewer hits/points are needed than aircraft.
+4. On shotdown, the target is removed from playable overlays so it cannot be farmed repeatedly.
+5. Shotdowns award a bonus and are recorded in the session result details.
 
 ## HUD Legend
 
 1. `GAME MODE` / `GAME OFF`: current game state.
 2. `Xs  Y pts`: remaining seconds and score.
-3. `H / M / S`: hits, misses, streak.
+3. `H / M / S / D`: hits, misses, streak, shotdowns.
 4. `Final Z%`: final session accuracy after stop/timeout.
 5. Context hints:
    - `No live targets...`: no current target overlays are visible.

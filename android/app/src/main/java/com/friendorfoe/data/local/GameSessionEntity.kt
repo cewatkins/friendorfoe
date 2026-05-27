@@ -46,6 +46,12 @@ data class GameSessionEntity(
     @ColumnInfo(name = "accuracy_percent")
     val accuracyPercent: Int,
 
+    @ColumnInfo(name = "shot_down_count")
+    val shotDownCount: Int = 0,
+
+    @ColumnInfo(name = "shot_down_targets")
+    val shotDownTargets: String = "",
+
     @ColumnInfo(name = "exit_reason")
     val exitReason: String
 )

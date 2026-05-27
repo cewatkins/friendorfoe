@@ -183,6 +183,21 @@ private fun GameSessionItem(session: GameSessionEntity) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            if (session.shotDownCount > 0) {
+                Text(
+                    text = "Shotdowns: ${session.shotDownCount}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (session.shotDownTargets.isNotBlank()) {
+                    Text(
+                        text = session.shotDownTargets,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f)
+                    )
+                }
+            }
+
             Text(
                 text = "Ended: ${session.exitReason}",
                 style = MaterialTheme.typography.labelSmall,

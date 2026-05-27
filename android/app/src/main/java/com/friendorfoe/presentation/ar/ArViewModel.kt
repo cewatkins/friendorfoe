@@ -441,6 +441,10 @@ class ArViewModel @Inject constructor(
 
     fun onPrimaryTargetTapped(objectId: String, context: Context) {
         if (_gameModeEnabled.value && _gameSession.value.isRunning) {
+            if (_gameSession.value.shotDownTargets.any { it.objectId == objectId }) {
+                _gameSession.value = _gameSession.value.copy(lastEvent = "Target already down")
+                return
+            }
             registerGameHit(objectId)
         } else {
             snapAndAutoCapture(objectId, context)
@@ -461,17 +465,64 @@ class ArViewModel @Inject constructor(
         if (!current.isRunning) return
 
         val target = screenPositions.value.firstOrNull { it.skyObject.id == objectId }
-        val confidence = target?.skyObject?.confidence ?: 0.5f
-        val distanceMeters = target?.distanceMeters ?: 1000.0
-        val points = GameModeEngine.pointsForHit(confidence, distanceMeters, current.streak)
+        if (target == null) {
+            _gameSession.value = current.copy(lastEvent = "Target lost")
+            return
+        }
 
-        val label = when (val obj = target?.skyObject) {
+        val confidence = target.skyObject.confidence
+        val distanceMeters = target.distanceMeters
+        val points = GameModeEngine.pointsForHit(confidence, distanceMeters, current.streak)
+        val isAircraft = target.skyObject is Aircraft
+
+        val label = when (val obj = target.skyObject) {
             is Aircraft -> obj.callsign ?: obj.icaoHex
             is Drone -> obj.droneId.take(12)
             else -> objectId
         }
 
         val nextStreak = current.streak + 1
+        val previousHitCount = current.targetHitCounts[objectId] ?: 0
+        val previousPointTotal = current.targetPointTotals[objectId] ?: 0
+        val transition = GameModeEngine.evaluateShotDownTransition(
+            isAircraft = isAircraft,
+            previousHitCount = previousHitCount,
+            previousPointTotal = previousPointTotal,
+            hitPoints = points
+        )
+        val nextTargetHitCounts = current.targetHitCounts + (objectId to transition.nextHitCount)
+        val nextTargetPointTotals = current.targetPointTotals + (objectId to transition.nextPointTotal)
+
+        if (transition.isShotDown && current.shotDownTargets.none { it.objectId == objectId }) {
+            val bonusPoints = transition.bonusPoints
+            val shotDown = ShotDownTarget(
+                objectId = objectId,
+                label = label,
+                hits = transition.nextHitCount,
+                pointsFromHits = transition.nextPointTotal,
+                bonusPoints = bonusPoints,
+                isAircraft = isAircraft
+            )
+            _gameSession.value = current.copy(
+                score = current.score + points + bonusPoints,
+                shots = current.shots + 1,
+                hits = current.hits + 1,
+                misses = current.misses,
+                streak = nextStreak,
+                bestStreak = maxOf(current.bestStreak, nextStreak),
+                shotDownTargets = current.shotDownTargets + shotDown,
+                targetHitCounts = nextTargetHitCounts,
+                targetPointTotals = nextTargetPointTotals,
+                lastEvent = "Shot down $label +${points + bonusPoints}"
+            )
+
+            if (_lockedObjectId.value == objectId) {
+                _lockedObjectId.value = null
+                resetZoom()
+            }
+            return
+        }
+
         _gameSession.value = current.copy(
             score = current.score + points,
             shots = current.shots + 1,
@@ -479,6 +530,8 @@ class ArViewModel @Inject constructor(
             misses = current.misses,
             streak = nextStreak,
             bestStreak = maxOf(current.bestStreak, nextStreak),
+            targetHitCounts = nextTargetHitCounts,
+            targetPointTotals = nextTargetPointTotals,
             lastEvent = "Hit $label +$points"
         )
     }
@@ -510,6 +563,9 @@ class ArViewModel @Inject constructor(
         val endedAt = System.currentTimeMillis()
         val startedAt = gameSessionStartedAtMs ?: endedAt
         val durationSeconds = ((endedAt - startedAt) / 1000L).toInt().coerceAtLeast(1)
+        val shotDownSummary = session.shotDownTargets.joinToString(separator = " | ") { target ->
+            "${target.label} (${target.hits} hits)"
+        }
         val entity = GameSessionEntity(
             startedAt = startedAt,
             endedAt = endedAt,
@@ -520,6 +576,8 @@ class ArViewModel @Inject constructor(
             misses = session.misses,
             bestStreak = session.bestStreak,
             accuracyPercent = session.accuracyPercent,
+            shotDownCount = session.shotDownTargets.size,
+            shotDownTargets = shotDownSummary,
             exitReason = exitReason
         )
 

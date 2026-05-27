@@ -247,6 +247,45 @@ fun ArViewScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        val shotDownTargetIds = remember(gameSession.shotDownTargets) {
+            gameSession.shotDownTargets.map { it.objectId }.toSet()
+        }
+        val renderablePositions = remember(screenPositions, gameModeEnabled, shotDownTargetIds) {
+            if (!gameModeEnabled || shotDownTargetIds.isEmpty()) {
+                screenPositions
+            } else {
+                screenPositions.filterNot { it.skyObject.id in shotDownTargetIds }
+            }
+        }
+        val targetProgressById = remember(
+            gameModeEnabled,
+            gameSession.isRunning,
+            renderablePositions,
+            gameSession.targetHitCounts,
+            gameSession.targetPointTotals
+        ) {
+            if (!gameModeEnabled || !gameSession.isRunning) {
+                emptyMap()
+            } else {
+                renderablePositions.associate { sp ->
+                    val objectId = sp.skyObject.id
+                    val isAircraft = sp.skyObject is Aircraft
+                    val hitCount = gameSession.targetHitCounts[objectId] ?: 0
+                    val pointTotal = gameSession.targetPointTotals[objectId] ?: 0
+                    val requiredHits = GameModeEngine.requiredHitsForShotDown(isAircraft)
+                    val progressPercent = GameModeEngine.shotDownProgressPercent(
+                        isAircraft = isAircraft,
+                        hitCount = hitCount,
+                        pointTotal = pointTotal
+                    )
+                    objectId to TargetProgressUi(
+                        label = "HP $hitCount/$requiredHits",
+                        percent = progressPercent
+                    )
+                }
+            }
+        }
+
         // Layer 1: CameraX Preview + ImageAnalysis + ImageCapture
         CameraPreview(
             visualDetectionAnalyzer = viewModel.visualDetectionAnalyzer,
@@ -257,7 +296,8 @@ fun ArViewScreen(
 
         // Layer 2: AR Overlay with floating labels + visual bounding boxes
         ArOverlay(
-            screenPositions = screenPositions,
+            screenPositions = renderablePositions,
+            targetProgressById = targetProgressById,
             unmatchedVisuals = unmatchedVisuals,
             classifiedUnknowns = classifiedUnknowns,
             darkTargetScores = darkTargetScores,
@@ -322,8 +362,9 @@ fun ArViewScreen(
         GameModeHud(
             gameModeEnabled = gameModeEnabled,
             gameSession = gameSession,
-            visibleTargetCount = screenPositions.size,
-            visibleAdsbTargetCount = screenPositions.count { it.skyObject is Aircraft },
+            visibleTargetCount = renderablePositions.size,
+            visibleAdsbTargetCount = renderablePositions.count { it.skyObject is Aircraft },
+            shotDownCount = gameSession.shotDownTargets.size,
             sensorBackendOnline = sensorBackendOnline,
             sensorNodeCount = sensorNodeCount,
             startEnabled = gameModeBlockReason == null,
@@ -834,6 +875,7 @@ private fun GameModeHud(
     gameSession: GameSessionState,
     visibleTargetCount: Int,
     visibleAdsbTargetCount: Int,
+    shotDownCount: Int,
     sensorBackendOnline: Boolean,
     sensorNodeCount: Int,
     startEnabled: Boolean,
@@ -874,7 +916,7 @@ private fun GameModeHud(
                 fontWeight = FontWeight.Medium
             )
             Text(
-                text = "H ${gameSession.hits}  M ${gameSession.misses}  S ${gameSession.streak}",
+                text = "H ${gameSession.hits}  M ${gameSession.misses}  S ${gameSession.streak}  D $shotDownCount",
                 color = Color.White.copy(alpha = 0.9f),
                 fontSize = 11.sp
             )
@@ -1060,6 +1102,7 @@ private fun CameraPreview(
 @Composable
 private fun ArOverlay(
     screenPositions: List<ScreenPosition>,
+    targetProgressById: Map<String, TargetProgressUi>,
     unmatchedVisuals: List<VisualDetection>,
     classifiedUnknowns: List<ClassifiedVisualDetection>,
     darkTargetScores: List<DarkTargetScore>,
@@ -1267,6 +1310,7 @@ private fun ArOverlay(
             val isDimmed = lockedObjectId != null && !isLocked
             val rect = drawLabel(
                 labelInfo = labelInfo,
+                targetProgress = targetProgressById[labelInfo.screenPosition.skyObject.id],
                 canvasWidth = canvasWidth,
                 canvasHeight = canvasHeight,
                 isLocked = isLocked,
@@ -1336,6 +1380,7 @@ private fun ArOverlay(
  */
 private fun DrawScope.drawLabel(
     labelInfo: AnimatedLabelData,
+    targetProgress: TargetProgressUi? = null,
     canvasWidth: Float,
     canvasHeight: Float,
     isLocked: Boolean = false,
@@ -1356,7 +1401,12 @@ private fun DrawScope.drawLabel(
 
     // Label dimensions
     val labelWidth = 240f
-    val labelHeight = if (isLocked) 74f else 60f
+    val labelHeight = when {
+        targetProgress != null && isLocked -> 90f
+        targetProgress != null -> 76f
+        isLocked -> 74f
+        else -> 60f
+    }
     val cornerRadius = 8f
 
     // Position: center the label at the animated screen coordinates
@@ -1498,6 +1548,18 @@ private fun DrawScope.drawLabel(
         // Secondary text (altitude for aircraft, manufacturer for drones)
         val secondaryEllipsized = ellipsize(secondaryLine, subtextPaint, labelWidth - 16f)
         drawText(secondaryEllipsized, left + 8f, top + 50f, subtextPaint)
+
+        if (targetProgress != null) {
+            val progressPaint = android.graphics.Paint().apply {
+                this.color = android.graphics.Color.argb(textAlpha, 240, 255, 240)
+                textSize = 18f
+                isAntiAlias = true
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setShadowLayer(2f, 1f, 1f, android.graphics.Color.BLACK)
+            }
+            val progressText = "${targetProgress.label} ${targetProgress.percent}%"
+            drawText(progressText, left + 8f, top + 68f, progressPaint)
+        }
 
         // Category badge (MIL/GOV/HELI/EMG/CGO/GND) in top-right corner
         if (catBadge != null) {
@@ -2646,4 +2708,9 @@ private data class AnimatedLabelData(
 private data class LabelHitTarget(
     val objectId: String,
     val rect: Rect
+)
+
+private data class TargetProgressUi(
+    val label: String,
+    val percent: Int
 )
