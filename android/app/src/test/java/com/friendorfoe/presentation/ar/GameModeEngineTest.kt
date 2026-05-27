@@ -82,4 +82,28 @@ class GameModeEngineTest {
         assertEquals(610, transition.nextPointTotal)
         assertEquals(GameModeEngine.shotDownBonus(isAircraft = false), transition.bonusPoints)
     }
+
+    @Test
+    fun `progress percent clamps to 100`() {
+        val progress = GameModeEngine.shotDownProgressPercent(
+            isAircraft = true,
+            hitCount = 99,
+            pointTotal = 10_000
+        )
+
+        assertEquals(100, progress)
+    }
+
+    @Test
+    fun `evaluate transition stays active before threshold`() {
+        val transition = GameModeEngine.evaluateShotDownTransition(
+            isAircraft = true,
+            previousHitCount = 0,
+            previousPointTotal = 0,
+            hitPoints = 120
+        )
+
+        assertTrue(!transition.isShotDown)
+        assertEquals(0, transition.bonusPoints)
+    }
 }

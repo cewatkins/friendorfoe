@@ -350,6 +350,10 @@ class ArViewModel @Inject constructor(
     }
 
     fun lockOnObject(objectId: String) {
+        if (isShotDownTargetBlocked(objectId)) {
+            _gameSession.value = _gameSession.value.copy(lastEvent = "Target already down")
+            return
+        }
         _selectedObjectId.value = null
         _showUnidentifiedSheet.value = false
         _zoomTarget.value = null
@@ -804,6 +808,10 @@ class ArViewModel @Inject constructor(
      * Called when a user taps an AR label.
      */
     fun snapToObject(objectId: String) {
+        if (isShotDownTargetBlocked(objectId)) {
+            _gameSession.value = _gameSession.value.copy(lastEvent = "Target already down")
+            return
+        }
         // Dismiss any other sheets
         _selectedObjectId.value = null
         _showUnidentifiedSheet.value = false
@@ -875,6 +883,12 @@ class ArViewModel @Inject constructor(
                 onResult(cleanUri != null)
             }
         }
+    }
+
+    private fun isShotDownTargetBlocked(objectId: String): Boolean {
+        val session = _gameSession.value
+        return _gameModeEnabled.value && session.isRunning &&
+            session.shotDownTargets.any { it.objectId == objectId }
     }
 
     /** Capture a photo from the main AR screen (no snap target required). Returns the saved URI. */
