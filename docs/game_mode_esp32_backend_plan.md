@@ -2,6 +2,10 @@
 
 This plan tracks the hardware-backed Game Mode implementation path (normal deployment flow, not Android-only fallback).
 
+Parallel hardware-track note:
+- Experimental classic ESP32 (ESP-WROOM-32) exploration is tracked separately in [docs/game_mode_wroom32_parallel_plan.md](docs/game_mode_wroom32_parallel_plan.md).
+- ESP32-S3 scanner/uplink remains the production source of truth.
+
 ## Goal
 
 Enable and validate Game Mode with a live backend and ESP32 scanner/uplink fleet using the standard deployment process.
