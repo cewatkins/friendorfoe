@@ -184,6 +184,34 @@ class MockBackendHandler(BaseHTTPRequestHandler):
             })
             return
 
+        if path == "/diagnostics/summary":
+            status_path = Path("/tmp/fof_sdr_status.json")
+            sdr_status = None
+            sdr_parse_ok = False
+            if status_path.exists():
+                try:
+                    sdr_status = json.loads(status_path.read_text(encoding="utf-8"))
+                    sdr_parse_ok = True
+                except Exception:
+                    sdr_status = None
+
+            self._send_json(200, {
+                "ok": True,
+                "backend": {
+                    "status": "ok",
+                    "mode": "mock",
+                    "version": "mock-1.0",
+                },
+                "sdr": {
+                    "status_file": str(status_path),
+                    "status_file_found": status_path.exists(),
+                    "status_parse_ok": sdr_parse_ok,
+                    "healthy": bool(sdr_status.get("healthy")) if sdr_status else False,
+                    "updated_at": sdr_status.get("updated_at") if sdr_status else None,
+                },
+            })
+            return
+
         self._send_json(404, {"detail": f"Not found: {path}"})
 
     def do_POST(self):
