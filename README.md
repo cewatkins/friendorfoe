@@ -291,6 +291,14 @@ Pre-hardware mode (no ESP32 devices connected yet) is also supported:
 ./scripts/game_mode_hardware_deploy.sh --pre-hardware --start-backend
 ```
 
+If your host cannot run the full Python backend stack, use the lightweight bridge backend:
+
+```bash
+./scripts/game_mode_hardware_deploy.sh --pre-hardware --mock-backend
+```
+
+This starts a local mock backend and configures connected adb devices to use `http://127.0.0.1:8000/` through `adb reverse`.
+
 This runs backend setup and Android install, then validates backend endpoints while tolerating zero online nodes. Phase model and acceptance criteria are tracked in `docs/game_mode_esp32_backend_plan.md`.
 
 ### Connecting the App to Your Backend

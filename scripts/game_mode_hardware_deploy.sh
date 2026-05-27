@@ -16,6 +16,7 @@ RUN_ANDROID=0
 RUN_TESTS=1
 START_BACKEND=0
 USE_DOCKER=0
+USE_MOCK_BACKEND=0
 PRE_HARDWARE=0
 BACKEND_URL="http://localhost:8000"
 
@@ -33,12 +34,14 @@ Options:
   --no-tests        Skip backend pytest preflight
   --start-backend   Start backend after setup
   --docker          Start backend with docker compose (implies --start-backend)
+  --mock-backend    Start lightweight mock backend bridge for Android clients (implies --start-backend)
   --backend-url URL Backend base URL for validation checks (default: http://localhost:8000)
   -h, --help        Show help
 
 Examples:
   scripts/game_mode_hardware_deploy.sh --all --start-backend
   scripts/game_mode_hardware_deploy.sh --pre-hardware --start-backend
+  scripts/game_mode_hardware_deploy.sh --pre-hardware --mock-backend
   scripts/game_mode_hardware_deploy.sh --backend --esp32 --docker
   scripts/game_mode_hardware_deploy.sh --android
 EOF
@@ -57,6 +60,11 @@ run() {
 }
 
 backend_setup() {
+  if [[ "$USE_MOCK_BACKEND" == "1" ]]; then
+    run "$REPO_ROOT/scripts/game_mode_backend_bridge.sh"
+    return
+  fi
+
   need_cmd python3
   need_cmd pip
 
@@ -185,6 +193,11 @@ while [[ $# -gt 0 ]]; do
     --docker)
       START_BACKEND=1
       USE_DOCKER=1
+      shift
+      ;;
+    --mock-backend)
+      START_BACKEND=1
+      USE_MOCK_BACKEND=1
       shift
       ;;
     --backend-url)
