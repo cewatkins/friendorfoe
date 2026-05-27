@@ -185,6 +185,8 @@ fun ArViewScreen(
     val snapTarget by viewModel.snapTarget.collectAsStateWithLifecycle()
     val gameModeEnabled by viewModel.gameModeEnabled.collectAsStateWithLifecycle()
     val gameSession by viewModel.gameSession.collectAsStateWithLifecycle()
+    val sensorNodeCount by viewModel.sensorNodeCount.collectAsStateWithLifecycle()
+    val gameModeBlockReason by viewModel.gameModeBlockReason.collectAsStateWithLifecycle()
 
     // Auto-capture state
     val autoCaptureEnabled by viewModel.autoCaptureEnabled.collectAsStateWithLifecycle()
@@ -322,6 +324,10 @@ fun ArViewScreen(
             gameSession = gameSession,
             visibleTargetCount = screenPositions.size,
             visibleAdsbTargetCount = screenPositions.count { it.skyObject is Aircraft },
+            sensorBackendOnline = sensorBackendOnline,
+            sensorNodeCount = sensorNodeCount,
+            startEnabled = gameModeBlockReason == null,
+            startDisabledReason = gameModeBlockReason,
             onToggle = { viewModel.toggleGameMode() },
             onRestart = { viewModel.startGameSession() },
             onStop = { viewModel.disableGameMode() },
@@ -828,6 +834,10 @@ private fun GameModeHud(
     gameSession: GameSessionState,
     visibleTargetCount: Int,
     visibleAdsbTargetCount: Int,
+    sensorBackendOnline: Boolean,
+    sensorNodeCount: Int,
+    startEnabled: Boolean,
+    startDisabledReason: String?,
     onToggle: () -> Unit,
     onRestart: () -> Unit,
     onStop: () -> Unit,
@@ -848,6 +858,12 @@ private fun GameModeHud(
             color = if (gameModeEnabled) Color(0xFFFFC107) else Color(0xFFB0BEC5),
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold
+        )
+
+        Text(
+            text = if (sensorBackendOnline) "Backend: online · Nodes: $sensorNodeCount" else "Backend: offline",
+            color = if (sensorBackendOnline) Color(0xFFA5D6A7) else Color(0xFFFFAB91),
+            fontSize = 10.sp
         )
 
         if (gameModeEnabled) {
@@ -889,10 +905,10 @@ private fun GameModeHud(
         HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
 
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TextButton(onClick = onToggle) {
+            TextButton(onClick = onToggle, enabled = gameModeEnabled || startEnabled) {
                 Text(
                     text = if (gameModeEnabled) "Disable" else "Enable",
-                    color = Color.White,
+                    color = if (gameModeEnabled || startEnabled) Color.White else Color.White.copy(alpha = 0.5f),
                     fontSize = 11.sp
                 )
             }
@@ -907,6 +923,15 @@ private fun GameModeHud(
                     }
                 }
             }
+        }
+
+        if (!gameModeEnabled && !startEnabled) {
+            Text(
+                text = startDisabledReason ?: "Backend prerequisites missing.",
+                color = Color(0xFFFFCCBC),
+                fontSize = 10.sp,
+                lineHeight = 12.sp
+            )
         }
 
         gameSession.lastEvent?.let { event ->

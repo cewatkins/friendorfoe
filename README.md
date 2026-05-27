@@ -285,7 +285,13 @@ For the normal hardware-backed flow (backend + ESP32 + Android), use:
 ./scripts/game_mode_hardware_deploy.sh --all --start-backend
 ```
 
-This runs backend setup, ESP32 firmware builds, and Android install in one operator workflow. Phase model and acceptance criteria are tracked in `docs/game_mode_esp32_backend_plan.md`.
+Pre-hardware mode (no ESP32 devices connected yet) is also supported:
+
+```bash
+./scripts/game_mode_hardware_deploy.sh --pre-hardware --start-backend
+```
+
+This runs backend setup and Android install, then validates backend endpoints while tolerating zero online nodes. Phase model and acceptance criteria are tracked in `docs/game_mode_esp32_backend_plan.md`.
 
 ### Connecting the App to Your Backend
 

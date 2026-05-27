@@ -21,6 +21,18 @@ Enable and validate Game Mode with a live backend and ESP32 scanner/uplink fleet
 
 ## Phases
 
+### Pre-Hardware Track (Before ESP32 Devices Arrive)
+
+- Run backend + Android workflow without ESP32 build/flash dependency.
+- Validate backend health and node-status endpoints.
+- Verify AR Game Mode correctly blocks start when no nodes are online.
+
+Exit criteria:
+
+- Backend endpoint checks pass (`/health`, `/detections/nodes/status`).
+- Android HUD shows readiness reason when backend is offline or no nodes are present.
+- Operator can run `scripts/game_mode_hardware_deploy.sh --pre-hardware --start-backend` end-to-end.
+
 ### Phase 1: Environment Bootstrap
 
 - Verify toolchain (python3, pip, adb, docker or uvicorn path, platformio).

@@ -369,6 +369,11 @@ class ArViewModel @Inject constructor(
         if (_gameModeEnabled.value) {
             disableGameMode()
         } else {
+            val blockReason = gameModeBlockReason.value
+            if (blockReason != null) {
+                _gameSession.value = _gameSession.value.copy(lastEvent = blockReason)
+                return
+            }
             _gameModeEnabled.value = true
             startGameSession()
         }
@@ -418,7 +423,8 @@ class ArViewModel @Inject constructor(
         gameSessionJob = null
         val current = _gameSession.value
         if (!resetOnly) {
-            persistCompletedSession(current.copy(isRunning = false), "manual")
+            val exitReason = if (current.remainingSeconds <= 0) "timer" else "manual"
+            persistCompletedSession(current.copy(isRunning = false), exitReason)
         }
         _gameSession.value = if (resetOnly) {
             GameSessionState()
@@ -1340,8 +1346,14 @@ class ArViewModel @Inject constructor(
     private val _sensorBackendOnline = MutableStateFlow(false)
     val sensorBackendOnline: StateFlow<Boolean> = _sensorBackendOnline.asStateFlow()
 
+    private val _sensorBackendObserved = MutableStateFlow(false)
+    val sensorBackendObserved: StateFlow<Boolean> = _sensorBackendObserved.asStateFlow()
+
     private val _sensorDroneCount = MutableStateFlow(0)
     val sensorDroneCount: StateFlow<Int> = _sensorDroneCount.asStateFlow()
+
+    private val _sensorNodeCount = MutableStateFlow(0)
+    val sensorNodeCount: StateFlow<Int> = _sensorNodeCount.asStateFlow()
 
     private val DRONE_CLASSIFICATIONS = setOf("confirmed_drone", "likely_drone", "test_drone")
 
@@ -1351,16 +1363,35 @@ class ArViewModel @Inject constructor(
             while (isActive) {
                 try {
                     val alerts = sensorMapApiService.getDroneAlerts()
+                    val nodeStatus = sensorMapApiService.getNodesStatus()
+                    _sensorBackendObserved.value = true
                     _sensorBackendOnline.value = true
                     _sensorDroneCount.value = alerts.activeDroneCount
+                    _sensorNodeCount.value = nodeStatus.nodes.count { it.online }
                 } catch (_: Exception) {
+                    _sensorBackendObserved.value = true
                     _sensorBackendOnline.value = false
                     _sensorDroneCount.value = 0
+                    _sensorNodeCount.value = 0
                 }
                 delay(5000L)
             }
         }
     }
+
+    val gameModeBlockReason: StateFlow<String?> = combine(
+        isOnline,
+        sensorBackendObserved,
+        sensorBackendOnline,
+        sensorNodeCount
+    ) { online, backendObserved, backendOnline, nodeCount ->
+        computeGameModeBlockReason(
+            isOnline = online,
+            backendObserved = backendObserved,
+            backendOnline = backendOnline,
+            sensorNodeCount = nodeCount
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     // --- Data source status ---
 
@@ -1865,6 +1896,21 @@ class ArViewModel @Inject constructor(
         } catch (e: Exception) {
             Log.w(TAG, "Error closing ARCore session", e)
         }
+    }
+}
+
+internal fun computeGameModeBlockReason(
+    isOnline: Boolean,
+    backendObserved: Boolean,
+    backendOnline: Boolean,
+    sensorNodeCount: Int
+): String? {
+    return when {
+        !backendObserved -> "Backend readiness check in progress..."
+        !isOnline -> "Offline. Connect network for backend game mode."
+        !backendOnline -> "Backend unreachable. Start backend first."
+        sensorNodeCount <= 0 -> "No ESP32 nodes online."
+        else -> null
     }
 }
 

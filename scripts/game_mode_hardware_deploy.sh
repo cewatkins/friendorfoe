@@ -16,6 +16,8 @@ RUN_ANDROID=0
 RUN_TESTS=1
 START_BACKEND=0
 USE_DOCKER=0
+PRE_HARDWARE=0
+BACKEND_URL="http://localhost:8000"
 
 usage() {
   cat <<'EOF'
@@ -24,16 +26,19 @@ Usage:
 
 Options:
   --all             Run backend + esp32 + android (default when none selected)
+  --pre-hardware    Run backend + android only and verify backend endpoints
   --backend         Run backend setup and optional tests
   --esp32           Build ESP32 scanner/uplink firmware
   --android         Build and install Android debug app
   --no-tests        Skip backend pytest preflight
   --start-backend   Start backend after setup
   --docker          Start backend with docker compose (implies --start-backend)
+  --backend-url URL Backend base URL for validation checks (default: http://localhost:8000)
   -h, --help        Show help
 
 Examples:
   scripts/game_mode_hardware_deploy.sh --all --start-backend
+  scripts/game_mode_hardware_deploy.sh --pre-hardware --start-backend
   scripts/game_mode_hardware_deploy.sh --backend --esp32 --docker
   scripts/game_mode_hardware_deploy.sh --android
 EOF
@@ -129,12 +134,32 @@ then run runtime checks with:
 EOF
 }
 
+backend_validate() {
+  need_cmd curl
+
+  echo "--- Backend endpoint validation ($BACKEND_URL) ---"
+  run curl -fsS "$BACKEND_URL/health" >/dev/null
+  run curl -fsS "$BACKEND_URL/detections/nodes/status" >/dev/null
+
+  echo "Backend endpoint checks passed."
+  if [[ "$PRE_HARDWARE" == "1" ]]; then
+    echo "Pre-hardware mode active: zero online nodes is expected until ESP32 hardware is deployed."
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --all)
       RUN_BACKEND=1
       RUN_ESP32=1
       RUN_ANDROID=1
+      shift
+      ;;
+    --pre-hardware)
+      PRE_HARDWARE=1
+      RUN_BACKEND=1
+      RUN_ANDROID=1
+      RUN_ESP32=0
       shift
       ;;
     --backend)
@@ -162,6 +187,11 @@ while [[ $# -gt 0 ]]; do
       USE_DOCKER=1
       shift
       ;;
+    --backend-url)
+      [[ $# -lt 2 ]] && { echo "Missing value for --backend-url" >&2; exit 1; }
+      BACKEND_URL="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -182,6 +212,7 @@ fi
 
 if [[ "$RUN_BACKEND" == "1" ]]; then
   backend_setup
+  backend_validate
 fi
 
 if [[ "$RUN_ESP32" == "1" ]]; then
