@@ -95,19 +95,14 @@ echo "      - Visit History screen"
 echo "[4/4] DB verification commands:"
 cat <<'EOF'
 
-# Count persisted sessions
-adb shell run-as com.friendorfoe \
-  sqlite3 databases/friendorfoe.db "SELECT COUNT(*) FROM game_sessions;"
+# Pull app DB and inspect latest sessions locally (works when device lacks sqlite3)
+scripts/android_game_mode_db_verify.sh --device SERIAL
 
-# Inspect latest sessions
-adb shell run-as com.friendorfoe \
-  sqlite3 -header -column databases/friendorfoe.db \
-  "SELECT id, datetime(started_at/1000,'unixepoch','localtime') AS started,
-          datetime(ended_at/1000,'unixepoch','localtime') AS ended,
-          duration_seconds, score, shots, hits, misses, best_streak, accuracy_percent, exit_reason
-   FROM game_sessions
-   ORDER BY ended_at DESC
-   LIMIT 5;"
+# Require one timer-ended and one manual-ended session
+scripts/android_game_mode_db_verify.sh --device SERIAL --require-both
+
+# Keep polling until coverage is complete (or timeout)
+scripts/android_game_mode_db_verify.sh --device SERIAL --wait-for-both --wait-timeout-seconds 300
 EOF
 
 echo
