@@ -32,7 +32,7 @@ class DetectionPrefs @Inject constructor(
         private const val KEY_BACKEND_ONLY = "sensor_backend_only_mode"
         private const val KEY_CAL_TOKEN = "fof_calibration_token"
         private const val KEY_OPERATOR_LABEL = "fof_calibration_operator"
-        private const val DEFAULT_BACKEND_URL = "http://fof-server.local:8000/"
+        private const val DEFAULT_BACKEND_URL = "http://localhost:8000/"
     }
 
     var adsbEnabled: Boolean
