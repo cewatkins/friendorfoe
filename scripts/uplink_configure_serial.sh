@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PORT="${1:-/dev/ttyACM1}"
+PORT="${1:-/dev/ttyACM0}"
 BACKEND_URL="${2:-}"
 WIFI_SSID="${3:-}"
 
@@ -10,7 +10,38 @@ status_url="${backend_base}/detections/nodes/status"
 
 if [[ -z "${BACKEND_URL}" || -z "${WIFI_SSID}" ]]; then
   echo "Usage: $0 <port> <backend_url> <wifi_ssid>"
-  echo "Example: $0 /dev/ttyACM1 http://192.168.1.208:8000 MyWiFi"
+  echo "Example: $0 /dev/serial/by-id/<uplink-id> http://192.168.1.218:8000 bpd2"
+  echo "Note: if more than one /dev/ttyACM* is present, use /dev/serial/by-id/... or set ALLOW_MULTI_TTYACM=1"
+  exit 1
+fi
+
+if ! ls /dev/ttyACM* >/dev/null 2>&1; then
+  echo "Error: no /dev/ttyACM* devices found. Connect uplink USB data and retry."
+  exit 1
+fi
+
+mapfile -t ACM_PORTS < <(ls -1 /dev/ttyACM* 2>/dev/null)
+if [[ "${#ACM_PORTS[@]}" -gt 1 && "${ALLOW_MULTI_TTYACM:-0}" != "1" ]]; then
+  if [[ "$PORT" != /dev/serial/by-id/* ]]; then
+    echo "Error: multiple ttyACM devices detected (${ACM_PORTS[*]})."
+    echo "Refusing to continue with ambiguous port '$PORT'."
+    echo "Use a stable /dev/serial/by-id/... path, unplug one device, or set ALLOW_MULTI_TTYACM=1 to override."
+    exit 1
+  fi
+fi
+
+if [[ ! -e "$PORT" ]]; then
+  echo "Error: selected port does not exist: $PORT"
+  echo "Available ttyACM devices: ${ACM_PORTS[*]}"
+  if [[ -d /dev/serial/by-id ]]; then
+    echo "Available by-id links:"
+    ls -1 /dev/serial/by-id 2>/dev/null || true
+  fi
+  exit 1
+fi
+
+if [[ ! -c "$PORT" ]]; then
+  echo "Error: selected port is not a character device: $PORT"
   exit 1
 fi
 
