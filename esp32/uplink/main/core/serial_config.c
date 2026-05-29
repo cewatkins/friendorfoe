@@ -1584,9 +1584,11 @@ static void handle_control_line(const char *line)
 
 static int read_control_char(void)
 {
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     if (!stdin_has_data(0)) {
         return EOF;
     }
+#endif
 
     int ch = fgetc(stdin);
     return ch;
@@ -1595,7 +1597,11 @@ static int read_control_char(void)
 static int read_control_bytes(uint8_t *buf, int max_len)
 {
     int n = 0;
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     while (n < max_len && stdin_has_data(0)) {
+#else
+    while (n < max_len) {
+#endif
         int ch = fgetc(stdin);
         if (ch == EOF) break;
         buf[n++] = (uint8_t)ch;

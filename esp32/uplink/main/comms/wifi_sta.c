@@ -39,6 +39,12 @@ static bool               s_initialized      = false;
 static bool               s_started          = false;
 static int                s_retry_count      = 0;
 
+/* Runtime (NVS) credential cache. We always prefer these over compile-time
+ * defaults so serial provisioning (FOF_CTL / FOF_SET) actually controls WiFi. */
+static char s_runtime_ssid[33] = {0};
+static char s_runtime_pass[65] = {0};
+static bool s_runtime_cred_valid = false;
+
 /* Multi-SSID credential list */
 static const wifi_credential_t s_wifi_creds[] = CONFIG_WIFI_CREDENTIALS;
 static int  s_current_cred_idx  = 0;    /* Index into s_wifi_creds */
@@ -59,22 +65,54 @@ static int backoff_delay_ms(int retry)
     return delay;
 }
 
+static bool runtime_credentials_ready(void)
+{
+    char nvs_ssid[33] = {0};
+    char nvs_pass[65] = {0};
+    nvs_config_get_wifi_ssid(nvs_ssid, sizeof(nvs_ssid));
+    nvs_config_get_wifi_password(nvs_pass, sizeof(nvs_pass));
+
+    bool valid = nvs_ssid[0] != '\0' && strcmp(nvs_ssid, "YourSSID") != 0;
+    if (!valid) {
+        s_runtime_cred_valid = false;
+        return false;
+    }
+
+    strncpy(s_runtime_ssid, nvs_ssid, sizeof(s_runtime_ssid) - 1);
+    strncpy(s_runtime_pass, nvs_pass, sizeof(s_runtime_pass) - 1);
+    s_runtime_cred_valid = true;
+    return true;
+}
+
 /* ── Try connecting with a specific credential index ──────────────────── */
 
 static void connect_with_cred(int idx)
 {
+    bool have_runtime = runtime_credentials_ready();
+
     if (idx < 0 || idx >= CONFIG_WIFI_CREDENTIAL_COUNT) idx = 0;
     s_current_cred_idx = idx;
 
     wifi_config_t wifi_config = {0};
-    strncpy((char *)wifi_config.sta.ssid, s_wifi_creds[idx].ssid,
-            sizeof(wifi_config.sta.ssid) - 1);
-    strncpy((char *)wifi_config.sta.password, s_wifi_creds[idx].password,
-            sizeof(wifi_config.sta.password) - 1);
+    if (have_runtime) {
+        strncpy((char *)wifi_config.sta.ssid, s_runtime_ssid,
+                sizeof(wifi_config.sta.ssid) - 1);
+        strncpy((char *)wifi_config.sta.password, s_runtime_pass,
+                sizeof(wifi_config.sta.password) - 1);
+    } else {
+        strncpy((char *)wifi_config.sta.ssid, s_wifi_creds[idx].ssid,
+                sizeof(wifi_config.sta.ssid) - 1);
+        strncpy((char *)wifi_config.sta.password, s_wifi_creds[idx].password,
+                sizeof(wifi_config.sta.password) - 1);
+    }
         wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
     wifi_config.sta.sae_pwe_h2e       = WPA3_SAE_PWE_BOTH;
 
-    ESP_LOGI(TAG, "Trying SSID '%s' (idx=%d)", s_wifi_creds[idx].ssid, idx);
+    if (have_runtime) {
+        ESP_LOGI(TAG, "Trying runtime SSID '%s'", s_runtime_ssid);
+    } else {
+        ESP_LOGI(TAG, "Trying compile-time SSID '%s' (idx=%d)", s_wifi_creds[idx].ssid, idx);
+    }
     esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
     esp_wifi_connect();
 }
@@ -83,6 +121,8 @@ static void connect_with_cred(int idx)
 
 static int find_best_ssid(void)
 {
+    bool have_runtime = runtime_credentials_ready();
+
     /* Do a quick scan */
     wifi_scan_config_t scan_cfg = {
         .show_hidden = false,
@@ -113,6 +153,14 @@ static int find_best_ssid(void)
     int best_idx  = -1;
     int best_rssi = -999;
     for (int i = 0; i < ap_count; i++) {
+        if (have_runtime && strcmp((char *)ap_list[i].ssid, s_runtime_ssid) == 0) {
+            ESP_LOGI(TAG, "  Found runtime '%s' RSSI=%d",
+                     ap_list[i].ssid, ap_list[i].rssi);
+            if (ap_list[i].rssi > best_rssi) {
+                best_rssi = ap_list[i].rssi;
+                best_idx = 0;
+            }
+        }
         for (int j = 0; j < CONFIG_WIFI_CREDENTIAL_COUNT; j++) {
             if (strcmp((char *)ap_list[i].ssid, s_wifi_creds[j].ssid) == 0) {
                 ESP_LOGI(TAG, "  Found '%s' RSSI=%d (cred %d)",
@@ -127,7 +175,11 @@ static int find_best_ssid(void)
     free(ap_list);
 
     if (best_idx >= 0) {
-        ESP_LOGI(TAG, "Best SSID: '%s' (RSSI=%d)", s_wifi_creds[best_idx].ssid, best_rssi);
+        if (have_runtime) {
+            ESP_LOGI(TAG, "Best SSID: '%s' (RSSI=%d)", s_runtime_ssid, best_rssi);
+        } else {
+            ESP_LOGI(TAG, "Best SSID: '%s' (RSSI=%d)", s_wifi_creds[best_idx].ssid, best_rssi);
+        }
     } else {
         ESP_LOGW(TAG, "No known SSIDs found in %d APs", ap_count);
     }
