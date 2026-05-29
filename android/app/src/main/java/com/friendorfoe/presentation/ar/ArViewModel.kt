@@ -10,14 +10,18 @@ import android.hardware.SensorManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.media.MediaPlayer
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.camera.core.Camera
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.friendorfoe.R
 import com.friendorfoe.data.local.GameSessionEntity
 import com.friendorfoe.data.remote.SensorMapApiService
 import com.friendorfoe.data.repository.GameSessionRepository
@@ -124,7 +128,18 @@ class ArViewModel @Inject constructor(
 
         private const val GAME_SESSION_DURATION_SECONDS = 120
         private const val GAME_SHOT_COOLDOWN_MS = 250L
+        private const val EXPLOSION_SFX_MAX_MS = 1900L
+
+        private val EXPLOSION_SFX_RES_IDS = intArrayOf(
+            R.raw.explosion_1,
+            R.raw.explosion_2,
+            R.raw.explosion_3
+        )
     }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var activeExplosionPlayer: MediaPlayer? = null
+    private var explosionStopRunnable: Runnable? = null
 
     /** AI classification result for current visual detection */
     private val _aiClassification = MutableStateFlow<String?>(null)
@@ -519,6 +534,7 @@ class ArViewModel @Inject constructor(
                 targetPointTotals = nextTargetPointTotals,
                 lastEvent = "Shot down $label +${points + bonusPoints}"
             )
+            playRandomExplosionSfx()
 
             if (_lockedObjectId.value == objectId) {
                 _lockedObjectId.value = null
@@ -552,6 +568,64 @@ class ArViewModel @Inject constructor(
             streak = 0,
             lastEvent = "Miss"
         )
+    }
+
+    private fun playRandomExplosionSfx() {
+        val selectedResId = EXPLOSION_SFX_RES_IDS.random()
+        val player = try {
+            MediaPlayer.create(appContext, selectedResId)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to create explosion SFX player", e)
+            null
+        } ?: return
+
+        explosionStopRunnable?.let(mainHandler::removeCallbacks)
+        activeExplosionPlayer?.let { existing ->
+            try {
+                if (existing.isPlaying) existing.stop()
+            } catch (_: Exception) {
+            }
+            existing.release()
+        }
+
+        activeExplosionPlayer = player
+        player.setOnCompletionListener { completed ->
+            if (activeExplosionPlayer === completed) {
+                activeExplosionPlayer = null
+            }
+            completed.release()
+        }
+        player.setOnErrorListener { errored, _, _ ->
+            if (activeExplosionPlayer === errored) {
+                activeExplosionPlayer = null
+            }
+            errored.release()
+            true
+        }
+
+        try {
+            player.start()
+        } catch (e: Exception) {
+            if (activeExplosionPlayer === player) {
+                activeExplosionPlayer = null
+            }
+            player.release()
+            Log.w(TAG, "Failed to start explosion SFX", e)
+            return
+        }
+
+        val stopRunnable = Runnable {
+            if (activeExplosionPlayer === player) {
+                try {
+                    if (player.isPlaying) player.stop()
+                } catch (_: Exception) {
+                }
+                player.release()
+                activeExplosionPlayer = null
+            }
+        }
+        explosionStopRunnable = stopRunnable
+        mainHandler.postDelayed(stopRunnable, EXPLOSION_SFX_MAX_MS)
     }
 
     private fun canFireGameShot(): Boolean {
@@ -1952,6 +2026,18 @@ class ArViewModel @Inject constructor(
         if (currentSession.isRunning) {
             persistCompletedSession(currentSession.copy(isRunning = false), "app_exit")
         }
+
+        explosionStopRunnable?.let(mainHandler::removeCallbacks)
+        explosionStopRunnable = null
+        activeExplosionPlayer?.let { player ->
+            try {
+                if (player.isPlaying) player.stop()
+            } catch (_: Exception) {
+            }
+            player.release()
+        }
+        activeExplosionPlayer = null
+
         super.onCleared()
         gameSessionJob?.cancel()
         stopSensors()
