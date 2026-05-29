@@ -21,12 +21,30 @@
 #include "detection_types.h"
 #include "detection_policy.h"
 #include "core/task_priorities.h"
+#if defined(SCANNER_BOARD)
 #include "comms/uart_tx.h"
+#endif
 
 #include <stdbool.h>
 #include <stdint.h>
 
+#if defined(SCANNER_BOARD)
 #include "calibration_mode.h"
+#else
+static inline bool scanner_calibration_mode_is_active(void)
+{
+    return false;
+}
+
+static inline bool scanner_calibration_mode_allows_ble_uuid128(
+    const uint8_t uuids[][16],
+    uint8_t count)
+{
+    (void)uuids;
+    (void)count;
+    return true;
+}
+#endif
 
 #if CONFIG_FOF_GLASSES_DETECTION
 #include "glasses_detector.h"
@@ -601,6 +619,7 @@ static bool enqueue_odid_detection_priority(const drone_detection_t *det)
         return false;
     }
 
+#if defined(SCANNER_BOARD)
     bool evicted = false;
     if (uart_tx_enqueue_priority_detection(det, &evicted)) {
         if (evicted) {
@@ -612,6 +631,20 @@ static bool enqueue_odid_detection_priority(const drone_detection_t *det)
 
     s_odid_queue_drop++;
     return false;
+#else
+    if (!s_detection_queue) {
+        s_odid_queue_drop++;
+        return false;
+    }
+
+    if (xQueueSend(s_detection_queue, det, 0) == pdTRUE) {
+        s_odid_emit++;
+        return true;
+    }
+
+    s_odid_queue_drop++;
+    return false;
+#endif
 }
 
 /* ── ODID service data extraction and parsing ──────────────────────────────── */

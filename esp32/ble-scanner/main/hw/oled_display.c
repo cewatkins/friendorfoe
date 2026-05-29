@@ -312,7 +312,8 @@ void oled_init(void)
     gpio_reset_pin(OLED_SCL_PIN);
 #endif
 
-    if (OLED_RST_PIN >= 0) {
+#if (OLED_RST_PIN >= 0)
+    {
         gpio_config_t rst_cfg = {
             .pin_bit_mask = 1ULL << OLED_RST_PIN,
             .mode         = GPIO_MODE_OUTPUT,
@@ -323,6 +324,7 @@ void oled_init(void)
         gpio_set_level(OLED_RST_PIN, 1);
         vTaskDelay(pdMS_TO_TICKS(10));
     }
+#endif
 
     i2c_master_bus_config_t bus_cfg = {
         .i2c_port   = I2C_NUM_0,
@@ -498,7 +500,7 @@ void oled_show_detection_paged(const char *drone_id, const char *manufacturer,
         snprintf(line, sizeof(line), "%.14s", drone_id ? drone_id : "???");
         fb_draw_string(0, 45, line);
 
-        char page_str[8];
+        char page_str[24];
         snprintf(page_str, sizeof(page_str), "%d/%d", page_current, page_total);
         int len = (int)strlen(page_str);
         int px = 128 - len * 6;
