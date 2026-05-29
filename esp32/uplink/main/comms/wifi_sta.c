@@ -71,7 +71,7 @@ static void connect_with_cred(int idx)
             sizeof(wifi_config.sta.ssid) - 1);
     strncpy((char *)wifi_config.sta.password, s_wifi_creds[idx].password,
             sizeof(wifi_config.sta.password) - 1);
-    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+        wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
     wifi_config.sta.sae_pwe_h2e       = WPA3_SAE_PWE_BOTH;
 
     ESP_LOGI(TAG, "Trying SSID '%s' (idx=%d)", s_wifi_creds[idx].ssid, idx);
@@ -171,7 +171,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 
         int delay = backoff_delay_ms(s_retry_count);
         ESP_LOGW(TAG, "Disconnected (retry=%d), reconnecting in %dms...",
-                 s_retry_count, delay);
+             s_retry_count, delay);
 
         /* Re-enable AP for setup when STA is disconnected */
         wifi_ap_start();

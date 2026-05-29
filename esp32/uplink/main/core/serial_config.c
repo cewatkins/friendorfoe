@@ -42,7 +42,6 @@
 #include "esp_rom_sys.h"
 #include "esp_timer.h"
 #include "cJSON.h"
-#include "hal/usb_serial_jtag_ll.h"
 #include "soc/rtc_cntl_reg.h"
 #include "soc/soc.h"
 
@@ -1585,20 +1584,16 @@ static void handle_control_line(const char *line)
 
 static int read_control_char(void)
 {
-#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
-    uint8_t c = 0;
-    int n = usb_serial_jtag_ll_read_rxfifo(&c, 1);
-    return n > 0 ? (int)c : EOF;
-#else
-    return fgetc(stdin);
-#endif
+    if (!stdin_has_data(0)) {
+        return EOF;
+    }
+
+    int ch = fgetc(stdin);
+    return ch;
 }
 
 static int read_control_bytes(uint8_t *buf, int max_len)
 {
-#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
-    return usb_serial_jtag_ll_read_rxfifo(buf, max_len);
-#else
     int n = 0;
     while (n < max_len && stdin_has_data(0)) {
         int ch = fgetc(stdin);
@@ -1606,7 +1601,6 @@ static int read_control_bytes(uint8_t *buf, int max_len)
         buf[n++] = (uint8_t)ch;
     }
     return n;
-#endif
 }
 
 static void serial_control_task(void *arg)

@@ -3478,7 +3478,7 @@ static void draw_scanner_bottom_strip(int y, bool ble_scanner_ok,
     snprintf(line, sizeof(line), "BLE %s  WIFI %s",
              proof_word(ble_state), proof_word(wifi_state));
     int64_t uptime_s = esp_timer_get_time() / 1000000LL;
-    char uptime_label[16];
+    char uptime_label[24];
     if (uptime_s < 3600) {
         snprintf(uptime_label, sizeof(uptime_label), "U%lld:%02lld",
                  (long long)(uptime_s / 60),
@@ -3491,7 +3491,7 @@ static void draw_scanner_bottom_strip(int y, bool ble_scanner_ok,
     const bool safe_usb = badge_runtime_is_safe_mode();
     const bool usb_alive = badge_runtime_usb_control_alive();
     const char *usb_label = safe_usb ? "SAFE" : (usb_alive ? "USBC" : "USB?");
-    char right_label[24];
+    char right_label[40];
     snprintf(right_label, sizeof(right_label), "%s %s", uptime_label, usb_label);
     uint16_t usb_color = safe_usb ? COL_GOLD :
                          (usb_alive ? COL_LINK_BRIGHT : COL_DARKGRAY);
@@ -4429,7 +4429,7 @@ static void draw_top_concern_tile(int y, badge_ui_domain_t domain,
             badge_drone_evidence_count(snapshot) > 0;
         bool show_meta_count = badge_item_is_meta_glasses(item) &&
             badge_meta_glasses_count(snapshot) > 0;
-        char count_text[8] = {0};
+        char count_text[12] = {0};
         int count_w = 0;
         if (show_drone_count) {
             uint32_t drone_count = badge_drone_evidence_count(snapshot);
@@ -4470,7 +4470,7 @@ static void draw_top_concern_tile(int y, badge_ui_domain_t domain,
         char detail[56];
         format_top_badge_detail(detail, sizeof(detail), item, snapshot);
 
-        char tag[12];
+        char tag[24];
         if (badge_item_is_drone_evidence(item)) {
             uint32_t rid_count = badge_remote_id_drone_count(snapshot);
             uint32_t ssid_count = badge_drone_ssid_count(snapshot);
@@ -4482,7 +4482,9 @@ static void draw_top_concern_tile(int y, badge_ui_domain_t domain,
                 snprintf(tag, sizeof(tag), "SSID");
             }
         } else if (item_total > 1) {
-            snprintf(tag, sizeof(tag), "%s %d/%d", lane, item_pos, item_total);
+            snprintf(tag, sizeof(tag), "%s %d/%d", lane,
+                     item_pos > 999 ? 999 : item_pos,
+                     item_total > 999 ? 999 : item_total);
         } else {
             snprintf(tag, sizeof(tag), "%s", lane);
         }
@@ -4630,10 +4632,10 @@ static void draw_billboard_row(int y, int h,
          item->category == BADGE_THREAT_CATEGORY_EVENT_BADGE) &&
         item->group_count > 1U) {
         char counted[24];
-        snprintf(counted, sizeof(counted), "%.15s x%lu",
-                 title,
-                 (unsigned long)item->group_count);
-        snprintf(title, sizeof(title), "%s", counted);
+        unsigned long grouped = (unsigned long)item->group_count;
+        if (grouped > 9999UL) grouped = 9999UL;
+        snprintf(counted, sizeof(counted), "%.15s x%lu", title, grouped);
+        snprintf(title, sizeof(title), "%.23s", counted);
     }
     fb_draw_string_fast_marquee(label_x, y + 3, title,
                                 LCD_W - label_x - aw - 8,
@@ -5239,8 +5241,8 @@ static void badge_focus_add_entity(const badge_threat_snapshot_t *snapshot,
                              item_index, item_total);
     if (!badge_threat_snapshot_entity_view_key(item, entry->key,
                                                sizeof(entry->key))) {
-        snprintf(entry->key, sizeof(entry->key), "ENT:%s:%s",
-                 title, detail);
+        snprintf(entry->key, sizeof(entry->key), "ENT:%.20s:%.36s",
+             title, detail);
     }
 }
 
@@ -5275,7 +5277,7 @@ static void badge_focus_add_candidate(const badge_threat_snapshot_t *snapshot,
                              candidate->diag.label,
                              candidate->diag.detail,
                              y, h, item_index, item_total);
-    snprintf(entry->key, sizeof(entry->key), "%s",
+    snprintf(entry->key, sizeof(entry->key), "%.63s",
              candidate->key[0] ? candidate->key : candidate->diag.label);
 }
 
@@ -5413,14 +5415,18 @@ static void draw_badge_billboards(const badge_threat_snapshot_t *snapshot,
     }
 
     if (ble_total > 1) {
-        char page[8];
-        snprintf(page, sizeof(page), "%d/%d", ble_pos + 1, ble_total);
+        char page[24];
+        snprintf(page, sizeof(page), "%d/%d",
+                 (ble_pos + 1) > 9999 ? 9999 : (ble_pos + 1),
+                 ble_total > 9999 ? 9999 : ble_total);
         fb_draw_tiny_string(LCD_W - tiny_pixel_width(page) - 4,
                             y0 + row_h - 8, page, COL_DARKGRAY, COL_PANEL_2);
     }
     if (wifi_total > 1) {
-        char page[8];
-        snprintf(page, sizeof(page), "%d/%d", wifi_pos + 1, wifi_total);
+        char page[24];
+        snprintf(page, sizeof(page), "%d/%d",
+                 (wifi_pos + 1) > 9999 ? 9999 : (wifi_pos + 1),
+                 wifi_total > 9999 ? 9999 : wifi_total);
         fb_draw_tiny_string(LCD_W - tiny_pixel_width(page) - 4,
                             bottom_y - 8, page, COL_DARKGRAY, COL_PANEL_2);
     }
