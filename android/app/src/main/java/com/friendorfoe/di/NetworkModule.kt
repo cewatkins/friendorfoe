@@ -38,8 +38,9 @@ object NetworkModule {
     private const val ADSB_ONE_BASE_URL = "https://api.adsb.one/"
     private const val HEXDB_BASE_URL = "https://hexdb.io/"
     private const val OPEN_METEO_BASE_URL = "https://api.open-meteo.com/"
-    // Backend URL: placeholder — actual URL is read from DetectionPrefs at request time
-    private const val BACKEND_BASE_URL = "http://localhost:8000/"
+    // Backend URL: placeholder — actual URL is read from DetectionPrefs at request time.
+    // Keep this routable on a physical phone in case URL rewriting is bypassed.
+    private const val BACKEND_BASE_URL = "http://192.168.1.218:8000/"
 
     @Provides
     @Singleton

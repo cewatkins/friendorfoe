@@ -32,7 +32,8 @@ class DetectionPrefs @Inject constructor(
         private const val KEY_BACKEND_ONLY = "sensor_backend_only_mode"
         private const val KEY_CAL_TOKEN = "fof_calibration_token"
         private const val KEY_OPERATOR_LABEL = "fof_calibration_operator"
-        private const val DEFAULT_BACKEND_URL = "http://localhost:8000/"
+        private const val DEFAULT_BACKEND_URL = "http://192.168.1.218:8000/"
+        private const val LEGACY_LOCALHOST_URL = "http://localhost:8000/"
     }
 
     var adsbEnabled: Boolean
@@ -70,7 +71,17 @@ class DetectionPrefs @Inject constructor(
 
     /** Backend URL — configurable */
     override var backendUrl: String
-        get() = prefs.getString(KEY_BACKEND_URL, DEFAULT_BACKEND_URL) ?: DEFAULT_BACKEND_URL
+        get() {
+            val configured = prefs.getString(KEY_BACKEND_URL, DEFAULT_BACKEND_URL)
+                ?.trim()
+                ?.ifEmpty { DEFAULT_BACKEND_URL }
+                ?: DEFAULT_BACKEND_URL
+            return if (configured.trimEnd('/') == LEGACY_LOCALHOST_URL.trimEnd('/')) {
+                DEFAULT_BACKEND_URL
+            } else {
+                configured
+            }
+        }
         set(value) = prefs.edit().putString(KEY_BACKEND_URL, value).apply()
 
     /** Backend-only mode — disable all local detection, rely solely on ESP32 sensors */
