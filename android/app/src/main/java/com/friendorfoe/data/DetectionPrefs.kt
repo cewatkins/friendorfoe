@@ -33,7 +33,8 @@ class DetectionPrefs @Inject constructor(
         private const val KEY_CAL_TOKEN = "fof_calibration_token"
         private const val KEY_OPERATOR_LABEL = "fof_calibration_operator"
         private const val DEFAULT_BACKEND_URL = "http://192.168.1.218:8000/"
-        private const val LEGACY_LOCALHOST_URL = "http://localhost:8000/"
+        private val LEGACY_LOOPBACK_URL_PATTERN =
+            Regex("^https?://(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0)(:\\d+)?/?$", RegexOption.IGNORE_CASE)
     }
 
     var adsbEnabled: Boolean
@@ -76,7 +77,7 @@ class DetectionPrefs @Inject constructor(
                 ?.trim()
                 ?.ifEmpty { DEFAULT_BACKEND_URL }
                 ?: DEFAULT_BACKEND_URL
-            return if (configured.trimEnd('/') == LEGACY_LOCALHOST_URL.trimEnd('/')) {
+            return if (LEGACY_LOOPBACK_URL_PATTERN.matches(configured)) {
                 DEFAULT_BACKEND_URL
             } else {
                 configured
