@@ -13,6 +13,8 @@ import androidx.camera.view.PreviewView
 import com.friendorfoe.detection.VisualDetectionAnalyzer
 import java.util.concurrent.Executors
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -185,6 +187,7 @@ fun ArViewScreen(
     val snapTarget by viewModel.snapTarget.collectAsStateWithLifecycle()
     val gameModeEnabled by viewModel.gameModeEnabled.collectAsStateWithLifecycle()
     val gameSession by viewModel.gameSession.collectAsStateWithLifecycle()
+    val missileStrikeEvent by viewModel.missileStrikeEvent.collectAsStateWithLifecycle()
     val sensorNodeCount by viewModel.sensorNodeCount.collectAsStateWithLifecycle()
     val gameModeBlockReason by viewModel.gameModeBlockReason.collectAsStateWithLifecycle()
 
@@ -198,6 +201,8 @@ fun ArViewScreen(
     var captureInProgress by remember { mutableStateOf(false) }
     var capturedPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var showShareConfirmation by remember { mutableStateOf(false) }
+    var activeMissileFlight by remember { mutableStateOf<MissileFlightUi?>(null) }
+    val missileTravelProgress = remember { Animatable(0f) }
 
     val latestGameModeEnabled by rememberUpdatedState(gameModeEnabled)
 
@@ -244,6 +249,26 @@ fun ArViewScreen(
             android.widget.Toast.makeText(context, lastAutoCapture, android.widget.Toast.LENGTH_SHORT).show()
             viewModel.clearLastAutoCapture()
         }
+    }
+
+    LaunchedEffect(missileStrikeEvent?.id) {
+        val event = missileStrikeEvent ?: return@LaunchedEffect
+        activeMissileFlight = MissileFlightUi(
+            startXNorm = event.startXNorm,
+            startYNorm = event.startYNorm,
+            targetXNorm = event.targetXNorm,
+            targetYNorm = event.targetYNorm
+        )
+        missileTravelProgress.snapTo(0f)
+        missileTravelProgress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(
+                durationMillis = event.travelDurationMs.coerceAtLeast(120),
+                easing = LinearEasing
+            )
+        )
+        activeMissileFlight = null
+        viewModel.consumeMissileStrikeEvent()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -317,6 +342,14 @@ fun ArViewScreen(
             onReticleTapped = { viewModel.unlockObject() },
             modifier = Modifier.fillMaxSize()
         )
+
+        activeMissileFlight?.let { flight ->
+            MissileStrikeOverlay(
+                flight = flight,
+                progress = missileTravelProgress.value,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         // Auto-capture phase indicator
         if (autoCapturePhase != com.friendorfoe.presentation.ar.ArViewModel.AutoCaptureState.IDLE) {
@@ -1948,6 +1981,141 @@ private fun DrawScope.drawGuidanceArrow(
     )
 }
 
+@Composable
+private fun MissileStrikeOverlay(
+    flight: MissileFlightUi,
+    progress: Float,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val startX = flight.startXNorm * size.width
+        val startY = flight.startYNorm * size.height
+        val targetX = flight.targetXNorm * size.width
+        val targetY = flight.targetYNorm * size.height
+        val clampedProgress = progress.coerceIn(0f, 1f)
+
+        val currentX = startX + (targetX - startX) * clampedProgress
+        val currentY = startY + (targetY - startY) * clampedProgress
+        val heading = atan2((targetY - startY), (targetX - startX))
+
+        drawLine(
+            color = Color(0xFFFFC107).copy(alpha = 0.35f),
+            start = Offset(startX, startY),
+            end = Offset(currentX, currentY),
+            strokeWidth = 7f
+        )
+        drawLine(
+            color = Color(0xFFFFF59D).copy(alpha = 0.8f),
+            start = Offset(
+                startX + (currentX - startX) * 0.55f,
+                startY + (currentY - startY) * 0.55f
+            ),
+            end = Offset(currentX, currentY),
+            strokeWidth = 3f
+        )
+
+        drawMissileSprite(
+            centerX = currentX,
+            centerY = currentY,
+            heading = heading,
+            flameScale = (0.65f + (1f - clampedProgress) * 0.7f)
+        )
+
+        if (clampedProgress > 0.82f) {
+            val flash = ((clampedProgress - 0.82f) / 0.18f).coerceIn(0f, 1f)
+            drawCircle(
+                color = Color(0xFFFF7043).copy(alpha = flash * 0.55f),
+                radius = 30f * flash,
+                center = Offset(targetX, targetY)
+            )
+        }
+    }
+}
+
+private fun DrawScope.drawMissileSprite(
+    centerX: Float,
+    centerY: Float,
+    heading: Float,
+    flameScale: Float
+) {
+    val ux = cos(heading)
+    val uy = sin(heading)
+    val px = -uy
+    val py = ux
+
+    val noseLen = 16f
+    val bodyLen = 24f
+    val bodyHalfWidth = 4.5f
+    val tailLen = 7f
+
+    val nose = Offset(centerX + ux * (bodyLen * 0.5f + noseLen), centerY + uy * (bodyLen * 0.5f + noseLen))
+    val frontLeft = Offset(centerX + ux * (bodyLen * 0.5f) + px * bodyHalfWidth, centerY + uy * (bodyLen * 0.5f) + py * bodyHalfWidth)
+    val frontRight = Offset(centerX + ux * (bodyLen * 0.5f) - px * bodyHalfWidth, centerY + uy * (bodyLen * 0.5f) - py * bodyHalfWidth)
+    val rearLeft = Offset(centerX - ux * (bodyLen * 0.5f) + px * bodyHalfWidth, centerY - uy * (bodyLen * 0.5f) + py * bodyHalfWidth)
+    val rearRight = Offset(centerX - ux * (bodyLen * 0.5f) - px * bodyHalfWidth, centerY - uy * (bodyLen * 0.5f) - py * bodyHalfWidth)
+    val tail = Offset(centerX - ux * (bodyLen * 0.5f + tailLen), centerY - uy * (bodyLen * 0.5f + tailLen))
+
+    val bodyPath = Path().apply {
+        moveTo(frontLeft.x, frontLeft.y)
+        lineTo(nose.x, nose.y)
+        lineTo(frontRight.x, frontRight.y)
+        lineTo(rearRight.x, rearRight.y)
+        lineTo(tail.x, tail.y)
+        lineTo(rearLeft.x, rearLeft.y)
+        close()
+    }
+    drawPath(bodyPath, Color(0xFFECEFF1))
+    drawPath(
+        path = bodyPath,
+        color = Color(0xFF263238),
+        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.6f)
+    )
+
+    val finSpread = 7f
+    val finRear = Offset(centerX - ux * (bodyLen * 0.28f), centerY - uy * (bodyLen * 0.28f))
+    drawLine(
+        color = Color(0xFF546E7A),
+        start = finRear,
+        end = Offset(finRear.x + px * finSpread, finRear.y + py * finSpread),
+        strokeWidth = 2.4f
+    )
+    drawLine(
+        color = Color(0xFF546E7A),
+        start = finRear,
+        end = Offset(finRear.x - px * finSpread, finRear.y - py * finSpread),
+        strokeWidth = 2.4f
+    )
+
+    val flameBase = tail
+    val flameTip = Offset(
+        flameBase.x - ux * (12f * flameScale),
+        flameBase.y - uy * (12f * flameScale)
+    )
+    val flameLeft = Offset(
+        flameBase.x + px * (3.2f * flameScale),
+        flameBase.y + py * (3.2f * flameScale)
+    )
+    val flameRight = Offset(
+        flameBase.x - px * (3.2f * flameScale),
+        flameBase.y - py * (3.2f * flameScale)
+    )
+    val flamePath = Path().apply {
+        moveTo(flameLeft.x, flameLeft.y)
+        lineTo(flameTip.x, flameTip.y)
+        lineTo(flameRight.x, flameRight.y)
+        close()
+    }
+    drawPath(flamePath, Color(0xFFFF6F00).copy(alpha = 0.95f))
+    drawCircle(
+        color = Color(0xFFFFF176).copy(alpha = 0.85f),
+        radius = 2.2f,
+        center = Offset(
+            flameBase.x - ux * (4f * flameScale),
+            flameBase.y - uy * (4f * flameScale)
+        )
+    )
+}
+
 /** Color for visual detection bounding box based on classification. */
 private fun classificationBoxColor(classification: VisualClassification): Color {
     return when (classification) {
@@ -2713,4 +2881,11 @@ private data class LabelHitTarget(
 private data class TargetProgressUi(
     val label: String,
     val percent: Int
+)
+
+private data class MissileFlightUi(
+    val startXNorm: Float,
+    val startYNorm: Float,
+    val targetXNorm: Float,
+    val targetYNorm: Float
 )

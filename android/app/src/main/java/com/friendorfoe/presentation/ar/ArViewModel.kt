@@ -10,7 +10,9 @@ import android.hardware.SensorManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.media.AudioManager
 import android.media.MediaPlayer
+import android.media.ToneGenerator
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Handler
@@ -132,6 +134,8 @@ class ArViewModel @Inject constructor(
         private const val GAME_SESSION_DURATION_SECONDS = 120
         private const val GAME_SHOT_COOLDOWN_MS = 250L
         private const val EXPLOSION_SFX_MAX_MS = 1900L
+        private const val MISSILE_TRAVEL_MS = 520L
+        private const val MISSILE_PRE_BOOM_LEAD_MS = 420L
 
         private val EXPLOSION_SFX_RES_IDS = intArrayOf(
             R.raw.explosion_1,
@@ -143,6 +147,24 @@ class ArViewModel @Inject constructor(
     private val mainHandler = Handler(Looper.getMainLooper())
     private var activeExplosionPlayer: MediaPlayer? = null
     private var explosionStopRunnable: Runnable? = null
+    private var delayedBoomRunnable: Runnable? = null
+    private var missileStrikeSequence = 0L
+
+    data class MissileStrikeEvent(
+        val id: Long,
+        val startXNorm: Float,
+        val startYNorm: Float,
+        val targetXNorm: Float,
+        val targetYNorm: Float,
+        val travelDurationMs: Int
+    )
+
+    private val _missileStrikeEvent = MutableStateFlow<MissileStrikeEvent?>(null)
+    val missileStrikeEvent: StateFlow<MissileStrikeEvent?> = _missileStrikeEvent.asStateFlow()
+
+    fun consumeMissileStrikeEvent() {
+        _missileStrikeEvent.value = null
+    }
 
     /** AI classification result for current visual detection */
     private val _aiClassification = MutableStateFlow<String?>(null)
@@ -537,7 +559,7 @@ class ArViewModel @Inject constructor(
                 targetPointTotals = nextTargetPointTotals,
                 lastEvent = "Shot down $label +${points + bonusPoints}"
             )
-            playRandomExplosionSfx()
+            triggerShotDownEffects(target)
 
             if (_lockedObjectId.value == objectId) {
                 _lockedObjectId.value = null
@@ -571,6 +593,53 @@ class ArViewModel @Inject constructor(
             streak = 0,
             lastEvent = "Miss"
         )
+    }
+
+    private fun triggerShotDownEffects(target: ScreenPosition) {
+        // Launch missile from lower-center HUD area toward the target's current screen point.
+        val event = MissileStrikeEvent(
+            id = ++missileStrikeSequence,
+            startXNorm = 0.5f,
+            startYNorm = 0.93f,
+            targetXNorm = target.screenX.coerceIn(0.02f, 0.98f),
+            targetYNorm = target.screenY.coerceIn(0.05f, 0.95f),
+            travelDurationMs = MISSILE_TRAVEL_MS.toInt()
+        )
+        _missileStrikeEvent.value = event
+
+        playThrusterLeadIn(MISSILE_PRE_BOOM_LEAD_MS.toInt())
+
+        delayedBoomRunnable?.let(mainHandler::removeCallbacks)
+        val boomRunnable = Runnable {
+            delayedBoomRunnable = null
+            playRandomExplosionSfx()
+        }
+        delayedBoomRunnable = boomRunnable
+        mainHandler.postDelayed(boomRunnable, MISSILE_PRE_BOOM_LEAD_MS)
+    }
+
+    private fun playThrusterLeadIn(durationMs: Int) {
+        val tone = try {
+            ToneGenerator(AudioManager.STREAM_MUSIC, 85)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to create thruster tone", e)
+            null
+        } ?: return
+
+        try {
+            tone.startTone(ToneGenerator.TONE_PROP_BEEP2, durationMs)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to start thruster tone", e)
+            tone.release()
+            return
+        }
+
+        mainHandler.postDelayed({
+            try {
+                tone.release()
+            } catch (_: Exception) {
+            }
+        }, durationMs.toLong() + 120L)
     }
 
     private fun playRandomExplosionSfx() {
@@ -2055,6 +2124,8 @@ class ArViewModel @Inject constructor(
 
         explosionStopRunnable?.let(mainHandler::removeCallbacks)
         explosionStopRunnable = null
+        delayedBoomRunnable?.let(mainHandler::removeCallbacks)
+        delayedBoomRunnable = null
         activeExplosionPlayer?.let { player ->
             try {
                 if (player.isPlaying) player.stop()
