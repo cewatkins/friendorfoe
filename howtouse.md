@@ -18,6 +18,13 @@ Intermittent device visibility is currently explained by node-side input state:
 - Detection counters are zero (`detection_count: 0`, `total_detections: 0`)
 - `/detections/devices/live` reports `devices: []`
 
+The Android status checks now probe both Wi-Fi backend addresses used on this LAN:
+
+- `http://192.168.1.208:8000/`
+- `http://192.168.1.218:8000/`
+
+The app will keep whichever one answers `/health` first and show that choice in the connection status.
+
 That means backend is running correctly, but no scanner detections are reaching it right now.
 
 ## 2) Original FriendorFoe Docs (Primary References)

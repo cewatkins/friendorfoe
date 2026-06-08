@@ -2,8 +2,8 @@ package com.friendorfoe.presentation.about
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.friendorfoe.data.BackendEndpoints
 import com.friendorfoe.data.DetectionPrefs
-import com.friendorfoe.data.remote.SensorMapApiService
 import com.friendorfoe.data.repository.SkyObjectRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -17,7 +17,6 @@ import javax.inject.Inject
 class AboutViewModel @Inject constructor(
     private val detectionPrefs: DetectionPrefs,
     private val skyObjectRepository: SkyObjectRepository,
-    private val sensorMapApiService: SensorMapApiService
 ) : ViewModel() {
 
     val adsbEnabled: Boolean get() = detectionPrefs.adsbEnabled
@@ -49,14 +48,18 @@ class AboutViewModel @Inject constructor(
     val connectionStatus: StateFlow<String?> = _connectionStatus.asStateFlow()
 
     fun testConnection() {
-        val url = detectionPrefs.backendUrl
-        _connectionStatus.value = "Testing $url ..."
+        val candidates = BackendEndpoints.candidates(detectionPrefs.backendUrl)
+        _connectionStatus.value = "Testing ${candidates.joinToString(" | ")} ..."
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val health = sensorMapApiService.getHealth()
-                _connectionStatus.value = "Connected to $url — v${health.version} DB:${health.database}"
-            } catch (e: Exception) {
-                _connectionStatus.value = "Failed ($url): ${e.message?.take(80)}"
+            val attempts = candidates.map { url -> BackendEndpoints.probeHealth(url) }
+            val success = attempts.firstOrNull { it.ok }
+            if (success != null) {
+                detectionPrefs.backendUrl = success.url
+                _connectionStatus.value = "Connected to ${BackendEndpoints.label(success.url)} (${success.url}) — v${success.version} DB:${success.database}"
+            } else {
+                _connectionStatus.value = attempts.joinToString("  ") { attempt ->
+                    "${BackendEndpoints.label(attempt.url)} failed: ${attempt.error ?: "unreachable"}"
+                }
             }
         }
     }

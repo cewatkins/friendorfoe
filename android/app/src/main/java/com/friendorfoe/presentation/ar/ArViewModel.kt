@@ -22,6 +22,8 @@ import androidx.camera.core.ImageCaptureException
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.friendorfoe.R
+import com.friendorfoe.data.BackendEndpoints
+import com.friendorfoe.data.DetectionPrefs
 import com.friendorfoe.data.local.GameSessionEntity
 import com.friendorfoe.data.remote.SensorMapApiService
 import com.friendorfoe.data.repository.GameSessionRepository
@@ -111,6 +113,7 @@ class ArViewModel @Inject constructor(
     private val gameSessionRepository: GameSessionRepository,
     val aiClassifier: AiClassifier,
     val trainingDataCollector: TrainingDataCollector,
+    private val detectionPrefs: DetectionPrefs,
     @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
@@ -1503,11 +1506,34 @@ class ArViewModel @Inject constructor(
 
     private val DRONE_CLASSIFICATIONS = setOf("confirmed_drone", "likely_drone", "test_drone")
 
+    private suspend fun resolveBackendUrl(): String? {
+        val candidates = BackendEndpoints.candidates(detectionPrefs.backendUrl)
+        for (candidate in candidates) {
+            val probe = BackendEndpoints.probeHealth(candidate)
+            if (probe.ok) {
+                if (detectionPrefs.backendUrl.trim() != probe.url) {
+                    detectionPrefs.backendUrl = probe.url
+                    Log.i(TAG, "Backend URL switched to ${probe.url}")
+                }
+                return probe.url
+            }
+        }
+        return null
+    }
+
     init {
         // Poll sensor backend every 5 seconds
         viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
                 try {
+                    if (resolveBackendUrl() == null) {
+                        _sensorBackendObserved.value = true
+                        _sensorBackendOnline.value = false
+                        _sensorDroneCount.value = 0
+                        _sensorNodeCount.value = 0
+                        delay(5000L)
+                        continue
+                    }
                     val alerts = sensorMapApiService.getDroneAlerts()
                     val nodeStatus = sensorMapApiService.getNodesStatus()
                     _sensorBackendObserved.value = true
