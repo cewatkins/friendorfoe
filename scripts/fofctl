@@ -72,7 +72,7 @@ print_header() {
 }
 
 print_controls() {
-  echo "Keys: [1]Summary [2]Nodes [3]Devices [4]Compose [5]Raw  [+/-]Speed  [r]Restart stack  [q]Quit"
+  echo "Keys: [1]Summary [2]Nodes [3]Devices [4]Compose [5]Raw [6]Trackers  [+/-]Speed  [r]Restart stack  [q]Quit"
 }
 
 render_summary_view() {
@@ -129,6 +129,18 @@ render_devices_view() {
   fi
 }
 
+render_trackers_view() {
+  local trackers_json
+  trackers_json="$(json_get "/detections/devices/live?min_confidence=0.0&trackers_only=true" 2>/dev/null || true)"
+
+  echo "[Trackers Live]"
+  if command -v jq >/dev/null 2>&1 && [[ -n "$trackers_json" ]]; then
+    echo "$trackers_json" | jq '{summary, trackers: [.devices[] | {manufacturer, kind, confidence, last_seen, age_s: ((now - (.last_seen // now)) | if . < 0 then 0 else . end | floor), identity_source, evidence}]}'
+  else
+    echo "${trackers_json:-unreachable}"
+  fi
+}
+
 render_compose_view() {
   echo "[Compose Services]"
   if compose_in_backend ps; then
@@ -154,6 +166,7 @@ render_view() {
     devices) render_devices_view ;;
     compose) render_compose_view ;;
     raw) render_raw_view ;;
+    trackers) render_trackers_view ;;
     *) render_summary_view ;;
   esac
 }
@@ -179,6 +192,7 @@ handle_key() {
     3) echo "devices" ;;
     4) echo "compose" ;;
     5) echo "raw" ;;
+    6) echo "trackers" ;;
     +) adjust_refresh faster; echo "$current_view" ;;
     -) adjust_refresh slower; echo "$current_view" ;;
     r)
@@ -231,6 +245,7 @@ Commands:
   health     Show backend /health JSON
   nodes      Show /detections/nodes/status
   devices    Show /detections/devices/live summary
+  trackers   Show tracker-focused live view with age
   screen     Run live interactive monitor (default)
   monitor    Alias of screen
 
@@ -275,6 +290,15 @@ main() {
       ;;
     devices)
       json_get "/detections/devices/live?min_confidence=0.0&trackers_only=false"
+      echo
+      ;;
+    trackers)
+      if command -v jq >/dev/null 2>&1; then
+        json_get "/detections/devices/live?min_confidence=0.0&trackers_only=true" \
+          | jq '{summary, trackers: [.devices[] | {manufacturer, kind, confidence, last_seen, age_s: ((now - (.last_seen // now)) | if . < 0 then 0 else . end | floor), identity_source, evidence}]}'
+      else
+        json_get "/detections/devices/live?min_confidence=0.0&trackers_only=true"
+      fi
       echo
       ;;
     screen|monitor)

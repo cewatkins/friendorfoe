@@ -93,6 +93,7 @@ fofctl ps
 fofctl health
 fofctl nodes
 fofctl devices
+fofctl trackers
 ```
 
 Default interactive monitor (new):
@@ -115,6 +116,7 @@ fofctl screen nodes
 fofctl screen devices
 fofctl screen compose
 fofctl screen raw
+fofctl screen trackers
 ```
 
 ## 5) Live Status Screen (Terminal Dashboard)
@@ -139,6 +141,7 @@ Interactive controls:
 - `3` live devices view
 - `4` compose services view
 - `5` raw JSON view
+- `6` tracker-only view (includes `age_s`)
 - `+` faster refresh
 - `-` slower refresh
 - `r` restart backend stack
