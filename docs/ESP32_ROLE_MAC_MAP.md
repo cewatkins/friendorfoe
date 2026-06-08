@@ -12,6 +12,14 @@ Purpose: prevent accidental role swaps between master (uplink) and scanner devic
 - MAC at check-in: e8:3d:c1:f3:2c:cc
 - Firmware flashed: `esp32/uplink` env `uplink-s3`
 
+## Check-In Mark (Scanner Second)
+
+- Timestamp: 2026-06-08
+- Confirmed role: scanner
+- Port at check-in: /dev/ttyACM0 (uplink currently unplugged)
+- MAC at check-in: e8:3d:c1:f1:a5:28
+- Firmware flashed: `esp32/scanner` env `scanner-s3-combo`
+
 ## Current Mapping
 
 - Role: scanner candidate
