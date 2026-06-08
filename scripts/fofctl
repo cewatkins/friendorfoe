@@ -1,0 +1,294 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# FriendorFoe backend control helper.
+# Works from any shell when linked into ~/.local/bin.
+
+FOF_HOME_DEFAULT="/home/oo/src/friendorfoe"
+FOF_HOME="${FOF_HOME:-$FOF_HOME_DEFAULT}"
+BACKEND_DIR="${FOF_BACKEND_DIR:-$FOF_HOME/backend}"
+BASE_URL="${FOF_BASE_URL:-http://localhost:8000}"
+REFRESH_SECONDS="${FOF_REFRESH_SECONDS:-2}"
+
+require_tools() {
+  command -v docker >/dev/null 2>&1 || {
+    echo "docker not found" >&2
+    exit 1
+  }
+}
+
+compose_cmd() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "$@"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    docker-compose "$@"
+  else
+    echo "Neither docker compose nor docker-compose is installed" >&2
+    exit 1
+  fi
+}
+
+with_backend_dir() {
+  if [[ ! -d "$BACKEND_DIR" ]]; then
+    echo "Backend directory not found: $BACKEND_DIR" >&2
+    exit 1
+  fi
+  cd "$BACKEND_DIR"
+}
+
+json_get() {
+  local path="$1"
+  curl -m 3 -sS "$BASE_URL$path"
+}
+
+compose_in_backend() {
+  (
+    cd "$BACKEND_DIR"
+    compose_cmd "$@"
+  )
+}
+
+print_divider() {
+  local cols
+  cols="$(tput cols 2>/dev/null || echo 100)"
+  printf '%*s\n' "$cols" '' | tr ' ' '-'
+}
+
+print_header() {
+  local title="$1"
+  local now
+  now="$(date '+%Y-%m-%d %H:%M:%S %Z')"
+
+  if [[ -t 1 ]]; then
+    tput bold 2>/dev/null || true
+    printf "FriendorFoe Monitor | %s\n" "$title"
+    tput sgr0 2>/dev/null || true
+  else
+    printf "FriendorFoe Monitor | %s\n" "$title"
+  fi
+
+  printf "Time: %s | Refresh: %ss | URL: %s\n" "$now" "$REFRESH_SECONDS" "$BASE_URL"
+  print_divider
+}
+
+print_controls() {
+  echo "Keys: [1]Summary [2]Nodes [3]Devices [4]Compose [5]Raw  [+/-]Speed  [r]Restart stack  [q]Quit"
+}
+
+render_summary_view() {
+  local health_json devices_json nodes_json
+  health_json="$(json_get "/health" 2>/dev/null || true)"
+  devices_json="$(json_get "/detections/devices/live?min_confidence=0.0&trackers_only=false" 2>/dev/null || true)"
+  nodes_json="$(json_get "/detections/nodes/status" 2>/dev/null || true)"
+
+  echo "[Backend Health]"
+  if command -v jq >/dev/null 2>&1 && [[ -n "$health_json" ]]; then
+    echo "$health_json" | jq '{status, version, redis, database}'
+  else
+    echo "${health_json:-unreachable}"
+  fi
+  echo
+
+  echo "[Live Device Summary]"
+  if command -v jq >/dev/null 2>&1 && [[ -n "$devices_json" ]]; then
+    echo "$devices_json" | jq '{devices: (.devices | length), summary}'
+  else
+    echo "${devices_json:-unreachable}"
+  fi
+  echo
+
+  echo "[Node Summary]"
+  if command -v jq >/dev/null 2>&1 && [[ -n "$nodes_json" ]]; then
+    echo "$nodes_json" | jq '{count, nodes: [.nodes[] | {device_id, online, age_s, detection_count, total_detections, scanners: [.scanners[] | {uart, connected, health}], reporting: {network_mode, uploads_ok, uploads_fail}}]}'
+  else
+    echo "${nodes_json:-unreachable}"
+  fi
+}
+
+render_nodes_view() {
+  local nodes_json
+  nodes_json="$(json_get "/detections/nodes/status" 2>/dev/null || true)"
+
+  echo "[Node Detail]"
+  if command -v jq >/dev/null 2>&1 && [[ -n "$nodes_json" ]]; then
+    echo "$nodes_json" | jq '{count, nodes: [.nodes[] | {device_id, online, age_s, ip, firmware_version, board_type, detection_count, total_detections, scanners: [.scanners[] | {slot, uart, connected, health, uart_raw_seen, uart_json_err}], time_sync: {sync_health, last_attempt_age_s, fetch_ok_count, fetch_fail_count}, reporting: {network_mode, uploads_ok, uploads_fail}}]}'
+  else
+    echo "${nodes_json:-unreachable}"
+  fi
+}
+
+render_devices_view() {
+  local devices_json
+  devices_json="$(json_get "/detections/devices/live?min_confidence=0.0&trackers_only=false" 2>/dev/null || true)"
+
+  echo "[Devices Live]"
+  if command -v jq >/dev/null 2>&1 && [[ -n "$devices_json" ]]; then
+    echo "$devices_json" | jq '{summary, devices: [.devices[] | {id, kind, confidence, last_seen, sources}]}'
+  else
+    echo "${devices_json:-unreachable}"
+  fi
+}
+
+render_compose_view() {
+  echo "[Compose Services]"
+  if compose_in_backend ps; then
+    :
+  else
+    echo "Unable to query docker compose status"
+  fi
+}
+
+render_raw_view() {
+  echo "[Raw: /health]"
+  json_get "/health" 2>/dev/null || echo "unreachable"
+  echo
+  echo "[Raw: /detections/nodes/status]"
+  json_get "/detections/nodes/status" 2>/dev/null || echo "unreachable"
+}
+
+render_view() {
+  local view="$1"
+  case "$view" in
+    summary) render_summary_view ;;
+    nodes) render_nodes_view ;;
+    devices) render_devices_view ;;
+    compose) render_compose_view ;;
+    raw) render_raw_view ;;
+    *) render_summary_view ;;
+  esac
+}
+
+adjust_refresh() {
+  local direction="$1"
+  if [[ "$direction" == "faster" ]]; then
+    if (( REFRESH_SECONDS > 1 )); then
+      REFRESH_SECONDS=$((REFRESH_SECONDS - 1))
+    fi
+  else
+    REFRESH_SECONDS=$((REFRESH_SECONDS + 1))
+  fi
+}
+
+handle_key() {
+  local key="$1"
+  local current_view="$2"
+
+  case "$key" in
+    1) echo "summary" ;;
+    2) echo "nodes" ;;
+    3) echo "devices" ;;
+    4) echo "compose" ;;
+    5) echo "raw" ;;
+    +) adjust_refresh faster; echo "$current_view" ;;
+    -) adjust_refresh slower; echo "$current_view" ;;
+    r)
+      compose_in_backend down >/dev/null 2>&1 || true
+      compose_in_backend up -d >/dev/null 2>&1 || true
+      echo "$current_view"
+      ;;
+    q)
+      echo "quit"
+      ;;
+    *)
+      echo "$current_view"
+      ;;
+  esac
+}
+
+status_screen() {
+  local initial_view="${1:-summary}"
+  local view="$initial_view"
+  local key next_view
+
+  while true; do
+    clear
+    print_header "$view"
+    render_view "$view"
+    print_divider
+    print_controls
+
+    if read -rsn1 -t "$REFRESH_SECONDS" key; then
+      next_view="$(handle_key "$key" "$view")"
+      if [[ "$next_view" == "quit" ]]; then
+        echo
+        echo "Exiting monitor."
+        break
+      fi
+      view="$next_view"
+    fi
+  done
+}
+
+usage() {
+  cat <<'EOF'
+Usage: fofctl <command>
+
+Commands:
+  up         Start backend stack
+  down       Stop backend stack
+  restart    Restart backend stack
+  ps         Show docker compose service status
+  health     Show backend /health JSON
+  nodes      Show /detections/nodes/status
+  devices    Show /detections/devices/live summary
+  screen     Run live interactive monitor (default)
+  monitor    Alias of screen
+
+Optional environment variables:
+  FOF_HOME         Repo root path (default: /home/oo/src/friendorfoe)
+  FOF_BACKEND_DIR  Backend directory override
+  FOF_BASE_URL     Backend base URL (default: http://localhost:8000)
+EOF
+}
+
+main() {
+  require_tools
+  local cmd="${1:-screen}"
+
+  case "$cmd" in
+    up)
+      with_backend_dir
+      compose_cmd up -d
+      compose_cmd ps
+      ;;
+    down)
+      with_backend_dir
+      compose_cmd down
+      ;;
+    restart)
+      with_backend_dir
+      compose_cmd down
+      compose_cmd up -d
+      compose_cmd ps
+      ;;
+    ps)
+      with_backend_dir
+      compose_cmd ps
+      ;;
+    health)
+      json_get "/health"
+      echo
+      ;;
+    nodes)
+      json_get "/detections/nodes/status"
+      echo
+      ;;
+    devices)
+      json_get "/detections/devices/live?min_confidence=0.0&trackers_only=false"
+      echo
+      ;;
+    screen|monitor)
+      status_screen "${2:-summary}"
+      ;;
+    help|-h|--help)
+      usage
+      ;;
+    *)
+      echo "Unknown command: $cmd" >&2
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
