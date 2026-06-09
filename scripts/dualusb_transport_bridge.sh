@@ -9,11 +9,14 @@ usage() {
   cat <<'EOF'
 Usage:
   scripts/dualusb_transport_bridge.sh --scanner-port <port> --uplink-port <port> [--slot ble|wifi]
+  scripts/dualusb_transport_bridge.sh --dry-run [--slot ble|wifi] [--input-file <path>]
 
 Options:
   --scanner-port   Scanner serial device (prefer /dev/serial/by-id/*)
   --uplink-port    Uplink serial device (prefer /dev/serial/by-id/*)
   --slot           Logical scanner slot label for uplink ingest (default: ble)
+  --dry-run        Parse/filter/forward locally without opening serial devices
+  --input-file     Scanner line source for --dry-run (default: stdin)
 
 Example:
   eval "$(scripts/discover_dual_usb.sh)"
@@ -24,6 +27,8 @@ EOF
 scanner_port=""
 uplink_port=""
 slot="ble"
+dry_run=false
+input_file=""
 stats_interval_s=5
 resend_interval_s=10
 resend_ack_stale_s=20
@@ -41,6 +46,43 @@ last_resend_epoch=0
 
 last_status_line=""
 last_scanner_info_line=""
+
+send_bridge_frame() {
+  local payload="$1"
+  ((sent_count++))
+  if [[ "$dry_run" == "true" ]]; then
+    # In dry-run mode we report what would be forwarded and treat it as acked.
+    echo "[dualusb-bridge][dry-run] FOF_SCANNER_RX:$slot:$payload"
+    ((ack_count++))
+    last_ack_epoch=$(date +%s)
+    return 0
+  fi
+  printf 'FOF_SCANNER_RX:%s:%s\n' "$slot" "$payload" >&3
+}
+
+handle_scanner_line() {
+  local line="$1"
+
+  [[ -z "$line" ]] && return 0
+  [[ "${line:0:1}" != "{" ]] && return 0
+
+  if [[ "$line" == *'"type":"status"'* ]]; then
+    last_status_line="$line"
+  elif [[ "$line" == *'"type":"scanner_info"'* ]]; then
+    last_scanner_info_line="$line"
+  fi
+
+  if [[ "$line" == *'"type":"detection"'* ||
+        "$line" == *'"type":"status"'* ||
+        "$line" == *'"type":"scanner_info"'* ||
+        "$line" == *'"type":"fw_check"'* ||
+        "$line" == *'"type":"fw_ready"'* ||
+        "$line" == *'"type":"ota_'* ]]; then
+    send_bridge_frame "$line" || return 1
+  fi
+
+  return 0
+}
 
 drain_uplink_responses() {
   local ack_line=""
@@ -118,15 +160,13 @@ maybe_resend_cached_control_frames() {
 
   did_resend=0
   if [[ -n "$last_status_line" ]]; then
-    if printf 'FOF_SCANNER_RX:%s:%s\n' "$slot" "$last_status_line" >&3; then
-      ((sent_count++))
+    if send_bridge_frame "$last_status_line"; then
       ((resend_count++))
       did_resend=1
     fi
   fi
   if [[ -n "$last_scanner_info_line" ]]; then
-    if printf 'FOF_SCANNER_RX:%s:%s\n' "$slot" "$last_scanner_info_line" >&3; then
-      ((sent_count++))
+    if send_bridge_frame "$last_scanner_info_line"; then
       ((resend_count++))
       did_resend=1
     fi
@@ -152,6 +192,14 @@ while [[ $# -gt 0 ]]; do
       slot="${2:-ble}"
       shift 2
       ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    --input-file)
+      input_file="${2:-}"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -164,23 +212,40 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$scanner_port" || -z "$uplink_port" ]]; then
-  usage >&2
-  exit 1
+if [[ "$dry_run" != "true" ]]; then
+  if [[ -z "$scanner_port" || -z "$uplink_port" ]]; then
+    usage >&2
+    exit 1
+  fi
+
+  if [[ ! -e "$scanner_port" ]]; then
+    echo "scanner port does not exist: $scanner_port" >&2
+    exit 2
+  fi
+  if [[ ! -e "$uplink_port" ]]; then
+    echo "uplink port does not exist: $uplink_port" >&2
+    exit 2
+  fi
 fi
 
-if [[ ! -e "$scanner_port" ]]; then
-  echo "scanner port does not exist: $scanner_port" >&2
-  exit 2
-fi
-if [[ ! -e "$uplink_port" ]]; then
-  echo "uplink port does not exist: $uplink_port" >&2
+if [[ -n "$input_file" && ! -f "$input_file" ]]; then
+  echo "input file does not exist: $input_file" >&2
   exit 2
 fi
 
 if [[ "$slot" != "ble" && "$slot" != "wifi" && "$slot" != "0" && "$slot" != "1" ]]; then
   echo "invalid --slot '$slot' (use ble|wifi|0|1)" >&2
   exit 2
+fi
+
+if [[ "$dry_run" == "true" ]]; then
+  echo "[dualusb-bridge] dry-run enabled slot=$slot source=${input_file:-stdin}"
+  while IFS= read -r line; do
+    print_bridge_stats_if_due
+    handle_scanner_line "$line" || break
+  done < "${input_file:-/dev/stdin}"
+  print_bridge_stats_if_due
+  exit 0
 fi
 
 # Configure line-oriented serial behavior.
@@ -218,25 +283,7 @@ while true; do
     drain_uplink_responses
     print_bridge_stats_if_due
     maybe_resend_cached_control_frames
-
-    [[ -z "$line" ]] && continue
-    [[ "${line:0:1}" != "{" ]] && continue
-
-    if [[ "$line" == *'"type":"status"'* ]]; then
-      last_status_line="$line"
-    elif [[ "$line" == *'"type":"scanner_info"'* ]]; then
-      last_scanner_info_line="$line"
-    fi
-
-    if [[ "$line" == *'"type":"detection"'* ||
-          "$line" == *'"type":"status"'* ||
-          "$line" == *'"type":"scanner_info"'* ||
-          "$line" == *'"type":"fw_check"'* ||
-          "$line" == *'"type":"fw_ready"'* ||
-          "$line" == *'"type":"ota_'* ]]; then
-      ((sent_count++))
-      printf 'FOF_SCANNER_RX:%s:%s\n' "$slot" "$line" >&3 || break
-    fi
+    handle_scanner_line "$line" || break
   done < <(stdbuf -oL cat "$scanner_port")
 
   drain_uplink_responses

@@ -187,6 +187,22 @@ Branch: dualusb
 ### Validation
 - Script syntax validated: `bash -n scripts/dualusb_transport_bridge.sh`.
 
+## Implementation Progress (Go+5)
+- Added dry-run mode for local validation of bridge filtering and forwarding behavior.
+
+### Added/Updated
+- `scripts/dualusb_transport_bridge.sh`
+  - New flags:
+    - `--dry-run`
+    - `--input-file <path>`
+  - Dry-run mode skips serial port open/config entirely.
+  - Reuses normal JSON filtering and frame formatting logic.
+  - Emits forwarded `FOF_SCANNER_RX` lines as preview output.
+  - Simulates ACK accounting so bridge stats remain meaningful during local tests.
+
+### Validation
+- Script syntax validated: `bash -n scripts/dualusb_transport_bridge.sh`.
+
 ## Implementation Progress (Go+4)
 - Added bounded auto-resend for control metadata frames when ACKs go stale.
 
