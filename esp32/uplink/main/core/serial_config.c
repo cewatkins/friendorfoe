@@ -20,6 +20,7 @@
 #include "oled_display.h"
 #include "version.h"
 #include "detection_policy.h"
+#include "usb_bridge_protocol.h"
 #ifdef FOF_BADGE_VARIANT
 #include "badge_runtime.h"
 #include "badge_display_policy_runtime.h"
@@ -1603,22 +1604,14 @@ static bool handle_scanner_rx_command(const char *line)
 {
     const char *payload = line + strlen(CMD_SCANNER_RX);
     int scanner_id = 0;
-
-    const char *json = payload;
-    const char *sep = strchr(payload, ':');
-    if (sep && sep > payload) {
-        size_t slot_len = (size_t)(sep - payload);
-        if ((slot_len == 4 && strncmp(payload, "wifi", 4) == 0) ||
-            (slot_len == 1 && payload[0] == '1')) {
-            scanner_id = 1;
-        }
-        json = sep + 1;
+    const char *json = NULL;
+    fof_usb_bridge_parse_result_t parse =
+        fof_usb_bridge_parse_scanner_rx_payload(payload, &scanner_id, &json);
+    if (parse == FOF_USB_BRIDGE_PARSE_BAD_SLOT) {
+        send_response("FOF_SCANNER_RX_ERR:slot\n");
+        return false;
     }
-
-    while (*json == ' ' || *json == '\t') {
-        json++;
-    }
-    if (*json == '\0') {
+    if (parse == FOF_USB_BRIDGE_PARSE_EMPTY) {
         send_response("FOF_SCANNER_RX_ERR:empty\n");
         return false;
     }

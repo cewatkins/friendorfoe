@@ -144,3 +144,28 @@ Branch: dualusb
 ### Validation
 - Native tests re-run after observability hardening: `cd esp32 && pio test -e test`
 - Result: 228 passed, 0 failed.
+
+## Implementation Progress (Go+2)
+- Hardened `FOF_SCANNER_RX` payload parsing with explicit slot validation and unit coverage.
+
+### Added/Updated
+- New shared parser helper for scanner bridge payloads:
+  - `esp32/shared/usb_bridge_protocol.h`
+  - `esp32/shared/usb_bridge_protocol.c`
+  - Supports:
+    - bare JSON (defaults to BLE slot)
+    - `ble|wifi|0|1:<json>` slot forms
+    - explicit parse result codes: `OK`, `EMPTY`, `BAD_SLOT`
+- Uplink serial control now uses shared parser and returns specific slot errors:
+  - `FOF_SCANNER_RX_ERR:slot`
+  - `FOF_SCANNER_RX_ERR:empty`
+  - File: `esp32/uplink/main/core/serial_config.c`
+- New native tests for parser behavior:
+  - `esp32/test/test_usb_bridge_protocol.c`
+  - Added to `esp32/test/test_runner.c`
+- Native test build now includes parser source:
+  - `esp32/platformio.ini`
+
+### Validation
+- Native tests re-run after parser hardening: `cd esp32 && pio test -e test`
+- Result: 235 passed, 0 failed.
