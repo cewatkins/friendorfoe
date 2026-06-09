@@ -52,6 +52,7 @@ static bool s_first_status_received = false;
 static QueueHandle_t s_detection_queue = NULL;
 static int           s_detection_count = 0;
 static SemaphoreHandle_t s_uart_tx_lock = NULL;
+static SemaphoreHandle_t s_process_lock = NULL;
 
 /* Scanner identity (populated from scanner_info UART messages) */
 static scanner_info_t s_ble_scanner_info = {0};
@@ -1856,6 +1857,62 @@ static void process_line(const char *line, size_t len, int scanner_id)
     cJSON_Delete(root);
 }
 
+static void process_line_locked(const char *line, size_t len, int scanner_id)
+{
+    if (!line || len == 0) {
+        return;
+    }
+    if (s_process_lock && xSemaphoreTake(s_process_lock, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        process_line(line, len, scanner_id);
+        xSemaphoreGive(s_process_lock);
+        return;
+    }
+    process_line(line, len, scanner_id);
+}
+
+bool uart_rx_ingest_transport_line(int scanner_id,
+                                   const char *line,
+                                   size_t len,
+                                   const char *transport_name)
+{
+    if (!line || len == 0) {
+        return false;
+    }
+#if !CONFIG_DUAL_SCANNER
+    if (scanner_id != 0) {
+        scanner_id = 0;
+    }
+#endif
+    if (scanner_id < 0 || scanner_id > 1) {
+        return false;
+    }
+
+    char local[LINE_BUF_SIZE];
+    size_t n = len;
+    if (n >= sizeof(local)) {
+        n = sizeof(local) - 1;
+    }
+    memcpy(local, line, n);
+    local[n] = '\0';
+
+    while (n > 0 && (local[n - 1] == '\n' || local[n - 1] == '\r')) {
+        local[--n] = '\0';
+    }
+    if (n == 0) {
+        return false;
+    }
+
+    int_fast64_t now_ms = (int_fast64_t)(esp_timer_get_time() / 1000);
+    note_scanner_raw_activity(scanner_id, now_ms, (int)n);
+    process_line_locked(local, n, scanner_id);
+
+    ESP_LOGD(TAG, "Ingested scanner[%d] line via %s (%u bytes)",
+             scanner_id,
+             transport_name ? transport_name : "transport",
+             (unsigned)n);
+    return true;
+}
+
 /* ── UART RX task (parameterized for dual-scanner support) ─────────────── */
 
 typedef struct {
@@ -1976,7 +2033,7 @@ static void uart_rx_task(void *arg)
             if (c == UART_MSG_DELIMITER) {
                 if (line_pos > 0) {
                     line_buf[line_pos] = '\0';
-                    process_line(line_buf, line_pos, scanner_id);
+                    process_line_locked(line_buf, line_pos, scanner_id);
                     line_pos = 0;
                 }
             } else {
@@ -2035,6 +2092,12 @@ void uart_rx_init(QueueHandle_t detection_queue)
         s_uart_tx_lock = xSemaphoreCreateMutex();
         if (!s_uart_tx_lock) {
             ESP_LOGE(TAG, "Failed to create scanner UART TX lock");
+        }
+    }
+    if (!s_process_lock) {
+        s_process_lock = xSemaphoreCreateMutex();
+        if (!s_process_lock) {
+            ESP_LOGE(TAG, "Failed to create scanner process lock");
         }
     }
 #ifdef FOF_BADGE_VARIANT

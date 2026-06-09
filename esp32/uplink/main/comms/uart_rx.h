@@ -12,6 +12,7 @@
 #include "badge_display_policy.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -78,6 +79,16 @@ void uart_rx_send_command(const char *json_cmd);
 void uart_rx_send_command_to_scanner(int scanner_id, const char *json_cmd);
 bool uart_rx_send_command_to_scanner_checked(int scanner_id, const char *json_cmd);
 bool uart_rx_set_scanner_tx_pin_for_badge_probe(int scanner_id, int tx_pin);
+
+/**
+ * Ingest one scanner JSON line delivered via non-UART transport (for example,
+ * USB bridge forwarding). scanner_id uses the same slot mapping as UART:
+ * 0 = BLE slot, 1 = WiFi slot.
+ */
+bool uart_rx_ingest_transport_line(int scanner_id,
+                                   const char *line,
+                                   size_t len,
+                                   const char *transport_name);
 
 /** Scanner identity info (received via UART scanner_info message). */
 typedef struct {

@@ -96,3 +96,25 @@ Branch: dualusb
 ### Validation
 - Native tests executed: `cd esp32 && pio test -e test`
 - Result: 228 passed, 0 failed.
+
+## Implementation Progress (Go Phase)
+- Added practical USB transport path using USB console + host bridge forwarding while keeping UART fallback.
+
+### Added
+- Uplink ingest API for scanner lines over non-UART transport:
+  - `uart_rx_ingest_transport_line()` in
+    - esp32/uplink/main/comms/uart_rx.h
+    - esp32/uplink/main/comms/uart_rx.c
+- USB control command for injected scanner frames:
+  - `FOF_SCANNER_RX:<slot>:<json>` handled in
+    - esp32/uplink/main/core/serial_config.c
+- Scanner USB output path when transport selects USB:
+  - esp32/scanner/main/comms/uart_tx.c
+- Host bridge script:
+  - scripts/dualusb_transport_bridge.sh
+- Deploy guidance updated:
+  - scripts/game_mode_hardware_deploy.sh
+
+### Validation
+- Native tests re-run after bridge changes: `cd esp32 && pio test -e test`
+- Result: 228 passed, 0 failed.

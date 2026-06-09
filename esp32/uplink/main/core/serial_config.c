@@ -50,6 +50,7 @@ static const char *TAG = "serial_cfg";
 #define LINE_BUF_SIZE   2048
 #define CMD_PREFIX      "FOF_SET:"
 #define CMD_CTL         "FOF_CTL:"
+#define CMD_SCANNER_RX  "FOF_SCANNER_RX:"
 #define CMD_STATUS      "FOF_STATUS"
 #define CMD_SAVE        "FOF_SAVE"
 #define CMD_PING        "FOF_PING"
@@ -74,6 +75,7 @@ static bool s_serial_fw_rx_active = false;
 static int64_t s_serial_fw_last_rx_ms = 0;
 
 static void handle_control_line(const char *line);
+static bool handle_scanner_rx_command(const char *line);
 static void print_json_escaped_string(const char *value);
 static void print_scanner_status_json(const char *name, uint8_t scanner_id,
                                       bool connected, bool peer_connected,
@@ -1537,6 +1539,7 @@ bool serial_config_listen(int timeout_ms)
                    strcmp(line, CMD_BOOTLOADER) == 0 ||
                    strcmp(line, CMD_DOWNLOAD) == 0 ||
                    strcmp(line, CMD_FLASH) == 0 ||
+                 strncmp(line, CMD_SCANNER_RX, strlen(CMD_SCANNER_RX)) == 0 ||
                    strncmp(line, CMD_CTL, strlen(CMD_CTL)) == 0) {
             handle_control_line(line);
         } else if (strlen(line) > 0) {
@@ -1573,6 +1576,8 @@ static void handle_control_line(const char *line)
         char msg[48];
         snprintf(msg, sizeof(msg), "FOF_PONG:%s\n", FOF_VERSION);
         send_response(msg);
+    } else if (strncmp(line, CMD_SCANNER_RX, strlen(CMD_SCANNER_RX)) == 0) {
+        (void)handle_scanner_rx_command(line);
     } else if (strcmp(line, CMD_STATUS) == 0) {
         send_badge_status_response();
     } else if (strncmp(line, CMD_CTL, strlen(CMD_CTL)) == 0) {
@@ -1588,6 +1593,35 @@ static void handle_control_line(const char *line)
     } else if (strcmp(line, CMD_SAVE) == 0) {
         send_response(RESP_SAVED);
     }
+}
+
+static bool handle_scanner_rx_command(const char *line)
+{
+    const char *payload = line + strlen(CMD_SCANNER_RX);
+    int scanner_id = 0;
+
+    const char *json = payload;
+    const char *sep = strchr(payload, ':');
+    if (sep && sep > payload) {
+        size_t slot_len = (size_t)(sep - payload);
+        if ((slot_len == 4 && strncmp(payload, "wifi", 4) == 0) ||
+            (slot_len == 1 && payload[0] == '1')) {
+            scanner_id = 1;
+        }
+        json = sep + 1;
+    }
+
+    while (*json == ' ' || *json == '\t') {
+        json++;
+    }
+    if (*json == '\0') {
+        return false;
+    }
+
+    return uart_rx_ingest_transport_line(scanner_id,
+                                         json,
+                                         strlen(json),
+                                         "usb_bridge");
 }
 
 static int read_control_char(void)

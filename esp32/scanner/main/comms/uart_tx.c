@@ -130,6 +130,7 @@ static volatile bool s_tx_enabled = false;
 #endif
 static bool s_uart_tx_stack_warned = false;
 static bool s_transport_warned = false;
+static bool s_usb_console_ready = false;
 static fof_transport_state_t s_transport_state;
 static volatile bool s_need_firmware = false;
 static char s_fw_target_version[32] = {0};
@@ -732,9 +733,27 @@ static bool uart_send_line_uart(const char *json_str)
     return ok;
 }
 
+static bool uart_send_line_usb(const char *json_str)
+{
+    if (!json_str) {
+        return false;
+    }
+    int written = printf("%s\n", json_str);
+    if (written <= 0) {
+        return false;
+    }
+    fflush(stdout);
+    return true;
+}
+
 static bool uart_send_line(const char *json_str)
 {
     int64_t now_ms = esp_timer_get_time() / 1000;
+
+    if (s_transport_state.desired == FOF_TRANSPORT_USB_CDC &&
+        s_usb_console_ready) {
+        (void)fof_transport_state_try_activate_usb(&s_transport_state, true);
+    }
 
     if (s_transport_state.desired == FOF_TRANSPORT_USB_CDC &&
         s_transport_state.active != FOF_TRANSPORT_USB_CDC &&
@@ -744,9 +763,15 @@ static bool uart_send_line(const char *json_str)
     }
 
     if (s_transport_state.active == FOF_TRANSPORT_USB_CDC) {
+        bool ok = uart_send_line_usb(json_str);
+        if (ok) {
+            fof_transport_state_note_tx(&s_transport_state, true, now_ms);
+            return true;
+        }
         if (s_transport_state.uart_fallback_enabled) {
             s_transport_state.active = FOF_TRANSPORT_UART;
             s_transport_state.fallback_active = true;
+            ESP_LOGW(TAG, "USB transport write failed; switched to UART fallback");
         } else {
             fof_transport_state_note_tx(&s_transport_state, false, now_ms);
             return false;
@@ -787,7 +812,16 @@ void uart_tx_init(void)
     display_policy_init_once();
 #endif
 
-    fof_transport_state_init(
+        s_usb_console_ready =
+    #if defined(CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG) && CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+        true;
+    #elif defined(CONFIG_ESP_CONSOLE_USB_CDC) && CONFIG_ESP_CONSOLE_USB_CDC
+        true;
+    #else
+        false;
+    #endif
+
+        fof_transport_state_init(
     &s_transport_state,
 #ifdef CONFIG_FOF_TRANSPORT_USB_PRIMARY
     CONFIG_FOF_TRANSPORT_USB_PRIMARY,
@@ -799,7 +833,7 @@ void uart_tx_init(void)
 #else
     true,
 #endif
-    false,
+    s_usb_console_ready,
     true,
     esp_timer_get_time() / 1000
     );

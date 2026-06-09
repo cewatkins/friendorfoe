@@ -116,6 +116,8 @@ Build complete.
 Next hardware steps (normal flow):
 0) Pin USB ports before flashing (Linux):
   eval "$(scripts/discover_dual_usb.sh)"
+0.5) Start dual-USB transport bridge (scanner -> uplink):
+  scripts/dualusb_transport_bridge.sh --scanner-port "$FOF_SCANNER_PORT" --uplink-port "$FOF_UPLINK_PORT" --slot ble
 1) Flash scanner with scanner-s3-combo artifact.
 2) Flash uplink with uplink-s3 artifact.
 3) Register node in backend and confirm /detections/nodes/status shows online.
