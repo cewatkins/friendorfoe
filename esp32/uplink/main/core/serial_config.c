@@ -167,12 +167,16 @@ static void print_scanner_status_json(const char *name, uint8_t scanner_id,
     uart_rx_get_scanner_uart_diag(scanner_id, &uart_diag);
     printf(",\"uart_raw_seen\":%s,\"uart_raw_age_s\":%lld,"
            "\"uart_raw_bytes\":%lu,\"uart_line_overflow\":%lu,"
-           "\"uart_json_err\":%lu",
+            "\"uart_json_err\":%lu,\"bridge_rx_lines\":%lu,"
+            "\"bridge_rx_bytes\":%lu,\"bridge_ingest_err\":%lu",
            uart_diag.raw_seen ? "true" : "false",
            (long long)uart_diag.raw_age_s,
            (unsigned long)uart_diag.raw_bytes,
            (unsigned long)uart_diag.line_overflow_count,
-           (unsigned long)uart_diag.json_parse_error_count);
+            (unsigned long)uart_diag.json_parse_error_count,
+            (unsigned long)uart_diag.bridge_rx_lines,
+            (unsigned long)uart_diag.bridge_rx_bytes,
+            (unsigned long)uart_diag.bridge_ingest_error_count);
     if (info) {
         printf(",\"ver\":");
         print_json_escaped_string(info->version);
@@ -1615,13 +1619,20 @@ static bool handle_scanner_rx_command(const char *line)
         json++;
     }
     if (*json == '\0') {
+        send_response("FOF_SCANNER_RX_ERR:empty\n");
         return false;
     }
 
-    return uart_rx_ingest_transport_line(scanner_id,
-                                         json,
-                                         strlen(json),
-                                         "usb_bridge");
+    bool ok = uart_rx_ingest_transport_line(scanner_id,
+                                            json,
+                                            strlen(json),
+                                            "usb_bridge");
+    if (ok) {
+        send_response("FOF_SCANNER_RX_OK\n");
+    } else {
+        send_response("FOF_SCANNER_RX_ERR:ingest\n");
+    }
+    return ok;
 }
 
 static int read_control_char(void)

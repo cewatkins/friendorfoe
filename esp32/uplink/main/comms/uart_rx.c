@@ -47,6 +47,12 @@ static atomic_uint_fast32_t s_line_overflow_ble = 0;
 static atomic_uint_fast32_t s_line_overflow_wifi = 0;
 static atomic_uint_fast32_t s_json_parse_error_ble = 0;
 static atomic_uint_fast32_t s_json_parse_error_wifi = 0;
+static atomic_uint_fast32_t s_bridge_rx_lines_ble = 0;
+static atomic_uint_fast32_t s_bridge_rx_lines_wifi = 0;
+static atomic_uint_fast32_t s_bridge_rx_bytes_ble = 0;
+static atomic_uint_fast32_t s_bridge_rx_bytes_wifi = 0;
+static atomic_uint_fast32_t s_bridge_ingest_err_ble = 0;
+static atomic_uint_fast32_t s_bridge_ingest_err_wifi = 0;
 static bool s_first_status_received = false;
 
 static QueueHandle_t s_detection_queue = NULL;
@@ -1876,6 +1882,11 @@ bool uart_rx_ingest_transport_line(int scanner_id,
                                    const char *transport_name)
 {
     if (!line || len == 0) {
+        if (scanner_id == 0) {
+            atomic_fetch_add(&s_bridge_ingest_err_ble, 1);
+        } else if (scanner_id == 1) {
+            atomic_fetch_add(&s_bridge_ingest_err_wifi, 1);
+        }
         return false;
     }
 #if !CONFIG_DUAL_SCANNER
@@ -1899,7 +1910,20 @@ bool uart_rx_ingest_transport_line(int scanner_id,
         local[--n] = '\0';
     }
     if (n == 0) {
+        if (scanner_id == 0) {
+            atomic_fetch_add(&s_bridge_ingest_err_ble, 1);
+        } else {
+            atomic_fetch_add(&s_bridge_ingest_err_wifi, 1);
+        }
         return false;
+    }
+
+    if (scanner_id == 0) {
+        atomic_fetch_add(&s_bridge_rx_lines_ble, 1);
+        atomic_fetch_add(&s_bridge_rx_bytes_ble, (uint32_t)n);
+    } else {
+        atomic_fetch_add(&s_bridge_rx_lines_wifi, 1);
+        atomic_fetch_add(&s_bridge_rx_bytes_wifi, (uint32_t)n);
     }
 
     int_fast64_t now_ms = (int_fast64_t)(esp_timer_get_time() / 1000);
@@ -2207,6 +2231,15 @@ void uart_rx_get_scanner_uart_diag(int scanner_id, scanner_uart_diag_t *out)
     atomic_uint_fast32_t *json_error = scanner_id == 0
         ? &s_json_parse_error_ble
         : &s_json_parse_error_wifi;
+    atomic_uint_fast32_t *bridge_lines = scanner_id == 0
+        ? &s_bridge_rx_lines_ble
+        : &s_bridge_rx_lines_wifi;
+    atomic_uint_fast32_t *bridge_bytes = scanner_id == 0
+        ? &s_bridge_rx_bytes_ble
+        : &s_bridge_rx_bytes_wifi;
+    atomic_uint_fast32_t *bridge_err = scanner_id == 0
+        ? &s_bridge_ingest_err_ble
+        : &s_bridge_ingest_err_wifi;
     int_fast64_t last = atomic_load(raw_ts);
     int_fast64_t now_ms = (int_fast64_t)(esp_timer_get_time() / 1000);
     out->raw_seen = last > 0 && (now_ms - last) < SCANNER_TIMEOUT_MS;
@@ -2214,6 +2247,9 @@ void uart_rx_get_scanner_uart_diag(int scanner_id, scanner_uart_diag_t *out)
     out->raw_bytes = (uint32_t)atomic_load(raw_bytes);
     out->line_overflow_count = (uint32_t)atomic_load(line_overflow);
     out->json_parse_error_count = (uint32_t)atomic_load(json_error);
+    out->bridge_rx_lines = (uint32_t)atomic_load(bridge_lines);
+    out->bridge_rx_bytes = (uint32_t)atomic_load(bridge_bytes);
+    out->bridge_ingest_error_count = (uint32_t)atomic_load(bridge_err);
 }
 
 /* Route a command to only one UART by scanning the JSON for markers.

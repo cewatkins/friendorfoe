@@ -67,6 +67,9 @@ typedef struct {
     uint32_t raw_bytes;
     uint32_t line_overflow_count;
     uint32_t json_parse_error_count;
+    uint32_t bridge_rx_lines;
+    uint32_t bridge_rx_bytes;
+    uint32_t bridge_ingest_error_count;
 } scanner_uart_diag_t;
 
 void uart_rx_get_scanner_uart_diag(int scanner_id, scanner_uart_diag_t *out);

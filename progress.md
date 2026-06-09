@@ -118,3 +118,29 @@ Branch: dualusb
 ### Validation
 - Native tests re-run after bridge changes: `cd esp32 && pio test -e test`
 - Result: 228 passed, 0 failed.
+
+## Implementation Progress (Go+1)
+- Hardened USB bridge ingestion observability and reconnect behavior.
+
+### Added/Updated
+- Per-scanner bridge ingestion diagnostics in uplink RX:
+  - `bridge_rx_lines`, `bridge_rx_bytes`, `bridge_ingest_error_count`
+  - Files:
+    - esp32/uplink/main/comms/uart_rx.h
+    - esp32/uplink/main/comms/uart_rx.c
+- Status APIs now expose bridge diagnostics:
+  - esp32/uplink/main/network/http_status.c
+  - esp32/uplink/main/core/serial_config.c
+- USB control ingest command now returns explicit ack/nack lines:
+  - `FOF_SCANNER_RX_OK` / `FOF_SCANNER_RX_ERR:*`
+  - File: esp32/uplink/main/core/serial_config.c
+- Host bridge script robustness:
+  - validates slot input
+  - auto-reconnect loop on USB stream interruption / cable replug
+  - File: scripts/dualusb_transport_bridge.sh
+- Operator CLI view includes bridge diagnostics:
+  - scripts/fofctl
+
+### Validation
+- Native tests re-run after observability hardening: `cd esp32 && pio test -e test`
+- Result: 228 passed, 0 failed.

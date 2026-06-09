@@ -121,12 +121,16 @@ static void badge_status_chunk_scanner(httpd_req_t *req,
     snprintf(buf, SCANNER_STATUS_BUF_LEN,
              ",\"uart_raw_seen\":%s,\"uart_raw_age_s\":%lld,"
              "\"uart_raw_bytes\":%lu,\"uart_line_overflow\":%lu,"
-             "\"uart_json_err\":%lu",
+             "\"uart_json_err\":%lu,\"bridge_rx_lines\":%lu,"
+             "\"bridge_rx_bytes\":%lu,\"bridge_ingest_err\":%lu",
              uart_diag.raw_seen ? "true" : "false",
              (long long)uart_diag.raw_age_s,
              (unsigned long)uart_diag.raw_bytes,
              (unsigned long)uart_diag.line_overflow_count,
-             (unsigned long)uart_diag.json_parse_error_count);
+             (unsigned long)uart_diag.json_parse_error_count,
+             (unsigned long)uart_diag.bridge_rx_lines,
+             (unsigned long)uart_diag.bridge_rx_bytes,
+             (unsigned long)uart_diag.bridge_ingest_error_count);
     httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
 
     if (info) {

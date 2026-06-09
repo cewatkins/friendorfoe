@@ -65,25 +65,48 @@ if [[ ! -e "$uplink_port" ]]; then
   exit 2
 fi
 
+if [[ "$slot" != "ble" && "$slot" != "wifi" && "$slot" != "0" && "$slot" != "1" ]]; then
+  echo "invalid --slot '$slot' (use ble|wifi|0|1)" >&2
+  exit 2
+fi
+
 # Configure line-oriented serial behavior.
 stty -F "$scanner_port" raw -echo 115200 || true
 stty -F "$uplink_port" raw -echo 115200 || true
 
 echo "[dualusb-bridge] scanner=$scanner_port uplink=$uplink_port slot=$slot"
 
-# Open uplink fd once and keep it for low-latency writes.
-exec 3>"$uplink_port"
-
-# Scanner may emit normal logs and JSON. Forward only likely scanner protocol JSON.
-stdbuf -oL cat "$scanner_port" | while IFS= read -r line; do
-  [[ -z "$line" ]] && continue
-  [[ "${line:0:1}" != "{" ]] && continue
-  if [[ "$line" == *'"type":"detection"'* ||
-        "$line" == *'"type":"status"'* ||
-        "$line" == *'"type":"scanner_info"'* ||
-        "$line" == *'"type":"fw_check"'* ||
-        "$line" == *'"type":"fw_ready"'* ||
-        "$line" == *'"type":"ota_'* ]]; then
-    printf 'FOF_SCANNER_RX:%s:%s\n' "$slot" "$line" >&3
+while true; do
+  if [[ ! -e "$scanner_port" || ! -e "$uplink_port" ]]; then
+    echo "[dualusb-bridge] waiting for device reattach..."
+    sleep 1
+    continue
   fi
+
+  stty -F "$scanner_port" raw -echo 115200 || true
+  stty -F "$uplink_port" raw -echo 115200 || true
+
+  # Open uplink fd for this session so disconnects are recovered cleanly.
+  exec 3>"$uplink_port" || {
+    echo "[dualusb-bridge] failed to open uplink port, retrying..."
+    sleep 1
+    continue
+  }
+
+  stdbuf -oL cat "$scanner_port" | while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    [[ "${line:0:1}" != "{" ]] && continue
+    if [[ "$line" == *'"type":"detection"'* ||
+          "$line" == *'"type":"status"'* ||
+          "$line" == *'"type":"scanner_info"'* ||
+          "$line" == *'"type":"fw_check"'* ||
+          "$line" == *'"type":"fw_ready"'* ||
+          "$line" == *'"type":"ota_'* ]]; then
+      printf 'FOF_SCANNER_RX:%s:%s\n' "$slot" "$line" >&3 || break
+    fi
+  done
+
+  exec 3>&-
+  echo "[dualusb-bridge] stream interrupted, reconnecting..."
+  sleep 1
 done
