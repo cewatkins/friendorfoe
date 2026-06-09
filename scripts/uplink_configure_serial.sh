@@ -59,11 +59,26 @@ set_backend_json="$(jq -cn --arg url "$BACKEND_URL" --arg ssid "$WIFI_SSID" --ar
 set_mode_json='{"cmd":"set_mode","mode":"backend","persist":true}'
 
 echo "Configuring serial port $PORT..."
-sudo stty -F "$PORT" 115200 raw -echo -echoe -echok -crtscts -ixon -ixoff
+
+SUDO_CMD=""
+if ! stty -F "$PORT" 115200 raw -echo -echoe -echok -crtscts -ixon -ixoff 2>/dev/null; then
+  if sudo -n true 2>/dev/null; then
+    SUDO_CMD="sudo"
+    sudo stty -F "$PORT" 115200 raw -echo -echoe -echok -crtscts -ixon -ixoff
+  else
+    echo "Error: cannot access $PORT as current user, and passwordless sudo is unavailable."
+    echo "Add your user to dialout (or equivalent) and re-login, or run once with sudo in a terminal."
+    exit 1
+  fi
+fi
 
 send_line() {
   local line="$1"
-  printf '%s\n' "$line" | sudo tee "$PORT" >/dev/null
+  if [[ -n "$SUDO_CMD" ]]; then
+    printf '%s\n' "$line" | $SUDO_CMD tee "$PORT" >/dev/null
+  else
+    printf '%s\n' "$line" > "$PORT"
+  fi
   sleep 0.3
 }
 
@@ -78,12 +93,13 @@ sleep 6
 
 echo "Polling backend node status via ${status_url} (45s)..."
 for _ in {1..22}; do
-  out="$(curl -s "$status_url" || true)"
-  count="$(echo "$out" | jq -r '.count // 0' 2>/dev/null || echo 0)"
+  out="$(curl -s --max-time 3 "$status_url" || true)"
+  count="$(echo "$out" | jq -r 'if (.count|type)=="number" then .count else 0 end' 2>/dev/null || echo 0)"
+  [[ -z "$count" ]] && count="0"
   ids="$(echo "$out" | jq -r '.nodes[].device_id' 2>/dev/null | paste -sd ',' -)"
   [[ -z "$ids" ]] && ids="none"
   echo "$(date +%H:%M:%S) count=${count} ids=${ids}"
-  if [[ "$count" != "0" ]]; then
+  if [[ "$count" =~ ^[0-9]+$ ]] && (( count > 0 )); then
     echo "$out" | jq .
     echo "SUCCESS: at least one node is posting."
     exit 0

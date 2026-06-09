@@ -4,6 +4,13 @@ Last updated: 2026-06-08
 
 Purpose: prevent accidental role swaps between master (uplink) and scanner devices.
 
+## Hard Rule (Power/Ground Stability)
+
+- Use only `/dev/ttyACM0` for flashing/provisioning.
+- Connect only one ESP32 board at a time (never uplink + scanner together).
+- Flash scanner only while uplink is physically disconnected.
+- After each flash, run MAC verification on `/dev/ttyACM0` before reconnecting any other board.
+
 ## Check-In Mark (Uplink First)
 
 - Timestamp: 2026-06-08
@@ -47,7 +54,6 @@ Use these before flashing:
 ```bash
 cd /home/oo/src/friendorfoe/esp32
 pio pkg exec -p tool-esptoolpy -- esptool.py --port /dev/ttyACM0 chip_id
-pio pkg exec -p tool-esptoolpy -- esptool.py --port /dev/ttyACM1 chip_id
 ```
 
 ## Backend Online Check
