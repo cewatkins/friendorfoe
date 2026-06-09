@@ -50,6 +50,45 @@ last_status_line=""
 last_scanner_info_line=""
 forwarded_count=0
 stop_requested=false
+terminate_reason=""
+fd3_open=false
+fd4_open=false
+
+print_final_summary() {
+  local pending ack_age
+  pending=$((sent_count - ack_count - err_count))
+  ack_age=-1
+  if (( last_ack_epoch > 0 )); then
+    ack_age=$(( $(date +%s) - last_ack_epoch ))
+  fi
+  echo "[dualusb-bridge] final reason=${terminate_reason:-normal_exit} forwarded=$forwarded_count sent=$sent_count ack=$ack_count err=$err_count resend=$resend_count pending=$pending ack_age_s=$ack_age"
+}
+
+close_bridge_fds() {
+  if [[ "$fd4_open" == "true" ]]; then
+    { exec 4>&-; } 2>/dev/null || true
+    fd4_open=false
+  fi
+  if [[ "$fd3_open" == "true" ]]; then
+    { exec 3>&-; } 2>/dev/null || true
+    fd3_open=false
+  fi
+}
+
+request_shutdown() {
+  local reason="$1"
+  stop_requested=true
+  terminate_reason="$reason"
+}
+
+on_exit() {
+  close_bridge_fds
+  print_final_summary
+}
+
+trap 'request_shutdown "signal_int"' INT
+trap 'request_shutdown "signal_term"' TERM
+trap on_exit EXIT
 
 print_startup_config() {
   local mode source
@@ -273,9 +312,8 @@ if [[ "$dry_run" == "true" ]]; then
       break
     fi
   done < "${input_file:-/dev/stdin}"
-  print_bridge_stats_if_due
-  if [[ "$once" == "true" ]]; then
-    echo "[dualusb-bridge] once mode complete; forwarded=$forwarded_count"
+  if [[ -z "$terminate_reason" && "$once" == "true" && "$stop_requested" == "true" ]]; then
+    terminate_reason="once_complete"
   fi
   exit 0
 fi
@@ -287,6 +325,13 @@ stty -F "$uplink_port" raw -echo 115200 || true
 print_startup_config
 
 while true; do
+  if [[ "$stop_requested" == "true" ]]; then
+    if [[ -z "$terminate_reason" ]]; then
+      terminate_reason="stop_requested"
+    fi
+    break
+  fi
+
   if [[ ! -e "$scanner_port" || ! -e "$uplink_port" ]]; then
     echo "[dualusb-bridge] waiting for device reattach..."
     sleep 1
@@ -302,14 +347,16 @@ while true; do
     sleep 1
     continue
   }
+  fd3_open=true
 
   # Read uplink control responses for ACK/ERR tracking.
   exec 4< <(stdbuf -oL cat "$uplink_port") || {
     echo "[dualusb-bridge] failed to start uplink response monitor, retrying..."
-    exec 3>&-
+    close_bridge_fds
     sleep 1
     continue
   }
+  fd4_open=true
 
   while IFS= read -r line; do
     drain_uplink_responses
@@ -322,12 +369,14 @@ while true; do
   done < <(stdbuf -oL cat "$scanner_port")
 
   drain_uplink_responses
-  print_bridge_stats_if_due
-  exec 3>&-
-  exec 4>&-
+  close_bridge_fds
   if [[ "$stop_requested" == "true" ]]; then
-    echo "[dualusb-bridge] once mode complete; forwarded=$forwarded_count"
-    exit 0
+    if [[ -z "$terminate_reason" && "$once" == "true" ]]; then
+      terminate_reason="once_complete"
+    elif [[ -z "$terminate_reason" ]]; then
+      terminate_reason="stop_requested"
+    fi
+    break
   fi
   echo "[dualusb-bridge] stream interrupted, reconnecting..."
   sleep 1

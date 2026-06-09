@@ -187,6 +187,19 @@ Branch: dualusb
 ### Validation
 - Script syntax validated: `bash -n scripts/dualusb_transport_bridge.sh`.
 
+## Implementation Progress (Go+8)
+- Added graceful shutdown path for operator interrupts and process termination.
+
+### Added/Updated
+- `scripts/dualusb_transport_bridge.sh`
+  - Handles `SIGINT` and `SIGTERM` via traps.
+  - Performs clean file descriptor shutdown on exit.
+  - Prints final bridge summary on shutdown with reason and counters.
+  - Integrates `--once` completion into shutdown reason reporting.
+
+### Validation
+- Script syntax validated: `bash -n scripts/dualusb_transport_bridge.sh`.
+
 ## Implementation Progress (Go+7)
 - Added startup configuration summary for faster operator verification.
 
