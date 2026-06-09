@@ -186,3 +186,18 @@ Branch: dualusb
 
 ### Validation
 - Script syntax validated: `bash -n scripts/dualusb_transport_bridge.sh`.
+
+## Implementation Progress (Go+4)
+- Added bounded auto-resend for control metadata frames when ACKs go stale.
+
+### Added/Updated
+- `scripts/dualusb_transport_bridge.sh`
+  - Added resend gate with conservative defaults:
+    - trigger only when ACK age exceeds stale threshold
+    - resend interval to avoid replay storms
+  - Replays only cached `status` and `scanner_info` frames.
+  - Never replays `detection` frames.
+  - Added `resend` counter to periodic bridge stats output.
+
+### Validation
+- Script syntax validated: `bash -n scripts/dualusb_transport_bridge.sh`.

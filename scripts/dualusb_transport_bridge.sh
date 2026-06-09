@@ -25,15 +25,22 @@ scanner_port=""
 uplink_port=""
 slot="ble"
 stats_interval_s=5
+resend_interval_s=10
+resend_ack_stale_s=20
 
 sent_count=0
 ack_count=0
 err_count=0
+resend_count=0
 err_slot_count=0
 err_empty_count=0
 err_ingest_count=0
 last_ack_epoch=0
 last_stats_epoch=0
+last_resend_epoch=0
+
+last_status_line=""
+last_scanner_info_line=""
 
 drain_uplink_responses() {
   local ack_line=""
@@ -82,15 +89,53 @@ print_bridge_stats_if_due() {
     ack_age=$((now - last_ack_epoch))
   fi
 
-  echo "[dualusb-bridge] stats sent=$sent_count ack=$ack_count err=$err_count pending=$pending ack_age_s=$ack_age slot_err=$err_slot_count empty_err=$err_empty_count ingest_err=$err_ingest_count"
+  echo "[dualusb-bridge] stats sent=$sent_count ack=$ack_count err=$err_count resend=$resend_count pending=$pending ack_age_s=$ack_age slot_err=$err_slot_count empty_err=$err_empty_count ingest_err=$err_ingest_count"
   if (( pending > 50 )); then
     echo "[dualusb-bridge] warning: high pending backlog ($pending)" >&2
   fi
-  if (( sent_count > 0 && ack_age > 20 )); then
+  if (( sent_count > 0 && ack_age > resend_ack_stale_s )); then
     echo "[dualusb-bridge] warning: uplink ACK stale (${ack_age}s)" >&2
   fi
 
   last_stats_epoch=$now
+}
+
+maybe_resend_cached_control_frames() {
+  local now ack_age did_resend
+  now=$(date +%s)
+
+  if (( sent_count == 0 || last_ack_epoch == 0 )); then
+    return
+  fi
+
+  ack_age=$((now - last_ack_epoch))
+  if (( ack_age < resend_ack_stale_s )); then
+    return
+  fi
+  if (( last_resend_epoch > 0 && now - last_resend_epoch < resend_interval_s )); then
+    return
+  fi
+
+  did_resend=0
+  if [[ -n "$last_status_line" ]]; then
+    if printf 'FOF_SCANNER_RX:%s:%s\n' "$slot" "$last_status_line" >&3; then
+      ((sent_count++))
+      ((resend_count++))
+      did_resend=1
+    fi
+  fi
+  if [[ -n "$last_scanner_info_line" ]]; then
+    if printf 'FOF_SCANNER_RX:%s:%s\n' "$slot" "$last_scanner_info_line" >&3; then
+      ((sent_count++))
+      ((resend_count++))
+      did_resend=1
+    fi
+  fi
+
+  if (( did_resend == 1 )); then
+    last_resend_epoch=$now
+    echo "[dualusb-bridge] resend: replayed cached status/scanner_info after stale ACK" >&2
+  fi
 }
 
 while [[ $# -gt 0 ]]; do
@@ -172,9 +217,17 @@ while true; do
   while IFS= read -r line; do
     drain_uplink_responses
     print_bridge_stats_if_due
+    maybe_resend_cached_control_frames
 
     [[ -z "$line" ]] && continue
     [[ "${line:0:1}" != "{" ]] && continue
+
+    if [[ "$line" == *'"type":"status"'* ]]; then
+      last_status_line="$line"
+    elif [[ "$line" == *'"type":"scanner_info"'* ]]; then
+      last_scanner_info_line="$line"
+    fi
+
     if [[ "$line" == *'"type":"detection"'* ||
           "$line" == *'"type":"status"'* ||
           "$line" == *'"type":"scanner_info"'* ||
