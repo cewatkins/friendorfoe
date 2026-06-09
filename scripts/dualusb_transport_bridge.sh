@@ -24,6 +24,74 @@ EOF
 scanner_port=""
 uplink_port=""
 slot="ble"
+stats_interval_s=5
+
+sent_count=0
+ack_count=0
+err_count=0
+err_slot_count=0
+err_empty_count=0
+err_ingest_count=0
+last_ack_epoch=0
+last_stats_epoch=0
+
+drain_uplink_responses() {
+  local ack_line=""
+  while IFS= read -r -t 0.001 ack_line <&4; do
+    [[ -z "$ack_line" ]] && continue
+    case "$ack_line" in
+      FOF_SCANNER_RX_OK)
+        ((ack_count++))
+        last_ack_epoch=$(date +%s)
+        ;;
+      FOF_SCANNER_RX_ERR:slot)
+        ((err_count++))
+        ((err_slot_count++))
+        ;;
+      FOF_SCANNER_RX_ERR:empty)
+        ((err_count++))
+        ((err_empty_count++))
+        ;;
+      FOF_SCANNER_RX_ERR:ingest)
+        ((err_count++))
+        ((err_ingest_count++))
+        ;;
+      FOF_SCANNER_RX_ERR:*)
+        ((err_count++))
+        ;;
+      *)
+        ;;
+    esac
+  done
+}
+
+print_bridge_stats_if_due() {
+  local now pending ack_age
+  now=$(date +%s)
+  if (( last_stats_epoch == 0 )); then
+    last_stats_epoch=$now
+    return
+  fi
+  if (( now - last_stats_epoch < stats_interval_s )); then
+    return
+  fi
+
+  pending=$((sent_count - ack_count - err_count))
+  ack_age=-1
+  if (( last_ack_epoch > 0 )); then
+    ack_age=$((now - last_ack_epoch))
+  fi
+
+  echo "[dualusb-bridge] stats sent=$sent_count ack=$ack_count err=$err_count pending=$pending ack_age_s=$ack_age slot_err=$err_slot_count empty_err=$err_empty_count ingest_err=$err_ingest_count"
+  if (( pending > 50 )); then
+    echo "[dualusb-bridge] warning: high pending backlog ($pending)" >&2
+  fi
+  if (( sent_count > 0 && ack_age > 20 )); then
+    echo "[dualusb-bridge] warning: uplink ACK stale (${ack_age}s)" >&2
+  fi
+
+  last_stats_epoch=$now
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -93,7 +161,18 @@ while true; do
     continue
   }
 
-  stdbuf -oL cat "$scanner_port" | while IFS= read -r line; do
+  # Read uplink control responses for ACK/ERR tracking.
+  exec 4< <(stdbuf -oL cat "$uplink_port") || {
+    echo "[dualusb-bridge] failed to start uplink response monitor, retrying..."
+    exec 3>&-
+    sleep 1
+    continue
+  }
+
+  while IFS= read -r line; do
+    drain_uplink_responses
+    print_bridge_stats_if_due
+
     [[ -z "$line" ]] && continue
     [[ "${line:0:1}" != "{" ]] && continue
     if [[ "$line" == *'"type":"detection"'* ||
@@ -102,11 +181,15 @@ while true; do
           "$line" == *'"type":"fw_check"'* ||
           "$line" == *'"type":"fw_ready"'* ||
           "$line" == *'"type":"ota_'* ]]; then
+      ((sent_count++))
       printf 'FOF_SCANNER_RX:%s:%s\n' "$slot" "$line" >&3 || break
     fi
-  done
+  done < <(stdbuf -oL cat "$scanner_port")
 
+  drain_uplink_responses
+  print_bridge_stats_if_due
   exec 3>&-
+  exec 4>&-
   echo "[dualusb-bridge] stream interrupted, reconnecting..."
   sleep 1
 done

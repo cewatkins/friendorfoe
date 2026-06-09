@@ -169,3 +169,20 @@ Branch: dualusb
 ### Validation
 - Native tests re-run after parser hardening: `cd esp32 && pio test -e test`
 - Result: 235 passed, 0 failed.
+
+## Implementation Progress (Go+3)
+- Added host-bridge ACK/ERR observability to catch degraded USB forwarding in real time.
+
+### Added/Updated
+- `scripts/dualusb_transport_bridge.sh`
+  - Tracks uplink responses (`FOF_SCANNER_RX_OK` / `FOF_SCANNER_RX_ERR:*`) via a read monitor FD.
+  - Maintains live counters:
+    - sent, ack, err, pending
+    - slot_err, empty_err, ingest_err
+  - Emits periodic bridge stats every 5 seconds.
+  - Emits warnings on:
+    - large pending backlog
+    - stale ACKs while traffic is still sent.
+
+### Validation
+- Script syntax validated: `bash -n scripts/dualusb_transport_bridge.sh`.
