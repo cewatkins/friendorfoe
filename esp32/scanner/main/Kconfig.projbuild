@@ -30,3 +30,17 @@ menu "FoF Privacy Detection"
             Only alert on glasses detected above this signal strength.
             -50 dBm = very close (~2m), -70 = nearby (~10m), -90 = far.
 endmenu
+
+menu "FoF Inter-board Transport"
+    config FOF_TRANSPORT_USB_PRIMARY
+        bool "Prefer USB-CDC for scanner->uplink telemetry"
+        default y
+        help
+            Enables USB-first transport selection for scanner telemetry. If the
+            USB data endpoint is unavailable, firmware can fall back to UART
+            when FOF_TRANSPORT_UART_FALLBACK is enabled.
+
+    config FOF_TRANSPORT_UART_FALLBACK
+        bool "Allow UART fallback when USB transport is unavailable"
+        default y
+endmenu

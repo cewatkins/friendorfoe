@@ -60,3 +60,39 @@ Branch: dualusb
 
 ## Notes
 - Existing unrelated local modifications were present before this work and were not changed by this branch task.
+
+## Implementation Start Marker
+- Date: 2026-06-09
+- Active branch check-in target: backup/dualusb-20260609-084430
+- Phase: Started implementation
+
+### Implemented in this check-in
+- Added shared transport abstraction scaffold for UART vs USB selection:
+  - esp32/shared/transport_link.h
+  - esp32/shared/transport_link.c
+- Added transport telemetry keys to protocol schema (additive fields):
+  - esp32/shared/uart_protocol.h
+- Wired scanner TX/status path to report active transport + fallback + error counters:
+  - esp32/scanner/main/comms/uart_tx.c
+- Added transport feature flags in scanner/uplink Kconfig:
+  - esp32/scanner/main/Kconfig.projbuild
+  - esp32/uplink/main/Kconfig.projbuild
+- Extended uplink parse/status surfaces with transport health fields:
+  - esp32/uplink/main/comms/uart_rx.h
+  - esp32/uplink/main/comms/uart_rx.c
+  - esp32/uplink/main/network/http_status.c
+  - esp32/uplink/main/core/serial_config.c
+- Updated operational tooling for dual USB discovery/pinning:
+  - scripts/discover_dual_usb.sh
+  - scripts/game_mode_hardware_deploy.sh
+  - scripts/fofctl
+- Added and registered transport unit/integration-sim tests:
+  - esp32/test/test_transport_link.c
+  - esp32/test/test_transport_integration_sim.c
+  - esp32/test/test_runner.c
+  - esp32/platformio.ini
+  - esp32/scanner/main/CMakeLists.txt
+
+### Validation
+- Native tests executed: `cd esp32 && pio test -e test`
+- Result: 228 passed, 0 failed.

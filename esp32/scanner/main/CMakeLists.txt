@@ -21,6 +21,7 @@ set(SRCS
     "../../shared/detection_policy.c"
     "../../shared/badge_display_policy.c"
     "../../shared/time_sync_policy.c"
+    "../../shared/transport_link.c"
     "../../shared/psram_alloc.c"
 )
 

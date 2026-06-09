@@ -96,6 +96,11 @@ typedef struct {
     char     fc_hist[128];   /* comma-separated frame subtype histogram */
     uint32_t uart_tx_dropped;
     uint32_t uart_tx_high_water;
+    char     transport_active[8];
+    bool     transport_fallback;
+    uint32_t transport_tx_err;
+    uint32_t transport_rx_err;
+    uint32_t transport_heartbeat;
     uint32_t tx_queue_depth;
     uint32_t tx_queue_capacity;
     uint32_t tx_queue_pressure_pct;

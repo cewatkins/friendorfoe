@@ -114,6 +114,8 @@ esp32_build() {
 
 Build complete.
 Next hardware steps (normal flow):
+0) Pin USB ports before flashing (Linux):
+  eval "$(scripts/discover_dual_usb.sh)"
 1) Flash scanner with scanner-s3-combo artifact.
 2) Flash uplink with uplink-s3 artifact.
 3) Register node in backend and confirm /detections/nodes/status shows online.

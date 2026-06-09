@@ -23,6 +23,7 @@
 #include "scanner_rollback.h"
 #include "led_status.h"
 #include "badge_display_policy.h"
+#include "transport_link.h"
 
 #include "cJSON.h"
 
@@ -86,6 +87,8 @@ static uint32_t s_probe_drop_rate_limit = 0;
 static uint32_t s_probe_drop_pressure = 0;
 static uint32_t s_ble_drop_profile = 0;
 
+static bool uart_send_line(const char *json_str);
+
 typedef struct {
     bool    in_use;
     char    key[64];
@@ -126,6 +129,8 @@ static volatile bool s_tx_enabled = true;
 static volatile bool s_tx_enabled = false;
 #endif
 static bool s_uart_tx_stack_warned = false;
+static bool s_transport_warned = false;
+static fof_transport_state_t s_transport_state;
 static volatile bool s_need_firmware = false;
 static char s_fw_target_version[32] = {0};
 static char s_fw_update_state[16] = "idle";
@@ -693,17 +698,16 @@ static bool should_shed_low_priority_detection(const drone_detection_t *detectio
  */
 void uart_tx_send_raw_json(const char *json_str)
 {
-    if (!json_str) return;
-    size_t len = strlen(json_str);
-    if (s_uart_mutex) xSemaphoreTake(s_uart_mutex, portMAX_DELAY);
-    uart_write_bytes(UART_PORT_NUM, json_str, len);
-    uart_write_bytes(UART_PORT_NUM, "\n", 1);
-    if (s_uart_mutex) xSemaphoreGive(s_uart_mutex);
+    if (!json_str) {
+        return;
+    }
+    uart_send_line(json_str);
 }
 
-static void uart_send_line(const char *json_str)
+static bool uart_send_line_uart(const char *json_str)
 {
     size_t len = strlen(json_str);
+    bool ok = true;
     if (s_uart_mutex) xSemaphoreTake(s_uart_mutex, portMAX_DELAY);
     size_t off = 0;
     while (off < len) {
@@ -712,6 +716,7 @@ static void uart_send_line(const char *json_str)
             s_uart_tx_dropped++;
             ESP_LOGW(TAG, "UART write stalled after %u/%u bytes",
                      (unsigned)off, (unsigned)len);
+            ok = false;
             break;
         }
         off += (size_t)written;
@@ -720,9 +725,37 @@ static void uart_send_line(const char *json_str)
     if (nl_written != 1) {
         s_uart_tx_dropped++;
         ESP_LOGW(TAG, "UART newline write failed (%d)", nl_written);
+        ok = false;
     }
     uart_wait_tx_done(UART_PORT_NUM, pdMS_TO_TICKS(250));
     if (s_uart_mutex) xSemaphoreGive(s_uart_mutex);
+    return ok;
+}
+
+static bool uart_send_line(const char *json_str)
+{
+    int64_t now_ms = esp_timer_get_time() / 1000;
+
+    if (s_transport_state.desired == FOF_TRANSPORT_USB_CDC &&
+        s_transport_state.active != FOF_TRANSPORT_USB_CDC &&
+        !s_transport_warned) {
+        s_transport_warned = true;
+        ESP_LOGW(TAG, "USB transport selected but CDC data channel is unavailable; using UART fallback");
+    }
+
+    if (s_transport_state.active == FOF_TRANSPORT_USB_CDC) {
+        if (s_transport_state.uart_fallback_enabled) {
+            s_transport_state.active = FOF_TRANSPORT_UART;
+            s_transport_state.fallback_active = true;
+        } else {
+            fof_transport_state_note_tx(&s_transport_state, false, now_ms);
+            return false;
+        }
+    }
+
+    bool ok = uart_send_line_uart(json_str);
+    fof_transport_state_note_tx(&s_transport_state, ok, now_ms);
+    return ok;
 }
 
 static void maybe_warn_uart_tx_stack_headroom(void)
@@ -753,6 +786,23 @@ void uart_tx_init(void)
 #ifdef FOF_BADGE_VARIANT
     display_policy_init_once();
 #endif
+
+    fof_transport_state_init(
+    &s_transport_state,
+#ifdef CONFIG_FOF_TRANSPORT_USB_PRIMARY
+    CONFIG_FOF_TRANSPORT_USB_PRIMARY,
+#else
+    false,
+#endif
+#ifdef CONFIG_FOF_TRANSPORT_UART_FALLBACK
+    CONFIG_FOF_TRANSPORT_UART_FALLBACK,
+#else
+    true,
+#endif
+    false,
+    true,
+    esp_timer_get_time() / 1000
+    );
 
     uart_config_t uart_config = {
         .baud_rate  = UART_BAUD_RATE,
@@ -1029,6 +1079,17 @@ void uart_tx_send_status(int ble_count, int wifi_count,
     }
 
     cJSON_AddStringToObject(root, JSON_KEY_TYPE, MSG_TYPE_STATUS);
+    fof_transport_state_note_heartbeat(&s_transport_state);
+    cJSON_AddStringToObject(root, JSON_KEY_TRANSPORT_ACTIVE,
+                            fof_transport_name(s_transport_state.active));
+    cJSON_AddBoolToObject(root, JSON_KEY_TRANSPORT_FALLBACK,
+                          s_transport_state.fallback_active);
+    cJSON_AddNumberToObject(root, JSON_KEY_TRANSPORT_TX_ERR,
+                            s_transport_state.tx_error_count);
+    cJSON_AddNumberToObject(root, JSON_KEY_TRANSPORT_RX_ERR,
+                            s_transport_state.rx_error_count);
+    cJSON_AddNumberToObject(root, JSON_KEY_TRANSPORT_HEARTBEAT,
+                            s_transport_state.heartbeat_count);
     cJSON_AddNumberToObject(root, "ble_count",  ble_count);
     cJSON_AddNumberToObject(root, "wifi_count", wifi_count);
     cJSON_AddNumberToObject(root, "ch",         current_channel);

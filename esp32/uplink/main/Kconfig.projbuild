@@ -9,3 +9,13 @@ menu "FoF Uplink OLED"
         int "OLED reset pin (-1 to disable)"
         default -1
 endmenu
+
+menu "FoF Inter-board Transport"
+    config FOF_TRANSPORT_USB_PRIMARY
+        bool "Prefer USB-CDC for scanner->uplink telemetry"
+        default y
+
+    config FOF_TRANSPORT_UART_FALLBACK
+        bool "Allow UART fallback when USB transport is unavailable"
+        default y
+endmenu

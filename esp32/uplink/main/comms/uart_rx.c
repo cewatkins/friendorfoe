@@ -1065,6 +1065,22 @@ static void handle_status(const cJSON *root, int scanner_id)
         info->auth_count    = (uint16_t)json_get_int(root, "auth_fr", 0);
         info->uart_tx_dropped = (uint32_t)json_get_double(root, "uart_tx_dropped", 0);
         info->uart_tx_high_water = (uint32_t)json_get_double(root, "uart_tx_high_water", 0);
+        const char *transport = json_get_string(root, JSON_KEY_TRANSPORT_ACTIVE,
+                                                info->transport_active[0] ? info->transport_active : "uart");
+        strncpy(info->transport_active, transport, sizeof(info->transport_active) - 1);
+        info->transport_active[sizeof(info->transport_active) - 1] = '\0';
+        const cJSON *transport_fallback = cJSON_GetObjectItemCaseSensitive(root, JSON_KEY_TRANSPORT_FALLBACK);
+        if (transport_fallback) {
+            info->transport_fallback = cJSON_IsTrue(transport_fallback) ||
+                                       (cJSON_IsNumber(transport_fallback) &&
+                                        transport_fallback->valueint != 0);
+        }
+        info->transport_tx_err = (uint32_t)json_get_double(root, JSON_KEY_TRANSPORT_TX_ERR,
+                                                           (double)info->transport_tx_err);
+        info->transport_rx_err = (uint32_t)json_get_double(root, JSON_KEY_TRANSPORT_RX_ERR,
+                                                           (double)info->transport_rx_err);
+        info->transport_heartbeat = (uint32_t)json_get_double(root, JSON_KEY_TRANSPORT_HEARTBEAT,
+                                                              (double)info->transport_heartbeat);
         info->tx_queue_depth = (uint32_t)json_get_double(root, "tx_queue_depth", 0);
         info->tx_queue_capacity = (uint32_t)json_get_double(root, "tx_queue_capacity", 0);
         info->tx_queue_pressure_pct = (uint32_t)json_get_double(root, "tx_queue_pressure_pct", 0);
@@ -1493,6 +1509,22 @@ static void process_line(const char *line, size_t len, int scanner_id)
         info->cmd_overflow_count = (uint32_t)json_get_double(root, "cmd_overflow", 0.0);
         info->cmd_stale_count = (uint32_t)json_get_double(root, "cmd_stale", 0.0);
         info->cmd_last_age_s = (int64_t)json_get_double(root, "cmd_last_age_s", -1.0);
+        const char *transport = json_get_string(root, JSON_KEY_TRANSPORT_ACTIVE,
+                                                info->transport_active[0] ? info->transport_active : "uart");
+        strncpy(info->transport_active, transport, sizeof(info->transport_active) - 1);
+        info->transport_active[sizeof(info->transport_active) - 1] = '\0';
+        const cJSON *transport_fallback = cJSON_GetObjectItemCaseSensitive(root, JSON_KEY_TRANSPORT_FALLBACK);
+        if (transport_fallback) {
+            info->transport_fallback = cJSON_IsTrue(transport_fallback) ||
+                                       (cJSON_IsNumber(transport_fallback) &&
+                                        transport_fallback->valueint != 0);
+        }
+        info->transport_tx_err = (uint32_t)json_get_double(root, JSON_KEY_TRANSPORT_TX_ERR,
+                                                           (double)info->transport_tx_err);
+        info->transport_rx_err = (uint32_t)json_get_double(root, JSON_KEY_TRANSPORT_RX_ERR,
+                                                           (double)info->transport_rx_err);
+        info->transport_heartbeat = (uint32_t)json_get_double(root, JSON_KEY_TRANSPORT_HEARTBEAT,
+                                                              (double)info->transport_heartbeat);
         const cJSON *ble_scanning = cJSON_GetObjectItemCaseSensitive(root, "ble_scanning");
         if (ble_scanning) {
             info->ble_scanning = cJSON_IsTrue(ble_scanning) ||

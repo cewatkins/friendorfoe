@@ -99,7 +99,7 @@ render_summary_view() {
 
   echo "[Node Summary]"
   if command -v jq >/dev/null 2>&1 && [[ -n "$nodes_json" ]]; then
-    echo "$nodes_json" | jq '{count, nodes: [.nodes[] | {device_id, online, age_s, detection_count, total_detections, scanners: [.scanners[] | {uart, connected, health}], reporting: {network_mode, uploads_ok, uploads_fail}}]}'
+    echo "$nodes_json" | jq '{count, nodes: [.nodes[] | {device_id, online, age_s, detection_count, total_detections, scanners: [.scanners[] | {uart, connected, health, transport, transport_fallback, transport_tx_err, transport_rx_err}], reporting: {network_mode, uploads_ok, uploads_fail}}]}'
   else
     echo "${nodes_json:-unreachable}"
   fi
@@ -111,7 +111,7 @@ render_nodes_view() {
 
   echo "[Node Detail]"
   if command -v jq >/dev/null 2>&1 && [[ -n "$nodes_json" ]]; then
-    echo "$nodes_json" | jq '{count, nodes: [.nodes[] | {device_id, online, age_s, ip, firmware_version, board_type, detection_count, total_detections, scanners: [.scanners[] | {slot, uart, connected, health, uart_raw_seen, uart_json_err}], time_sync: {sync_health, last_attempt_age_s, fetch_ok_count, fetch_fail_count}, reporting: {network_mode, uploads_ok, uploads_fail}}]}'
+    echo "$nodes_json" | jq '{count, nodes: [.nodes[] | {device_id, online, age_s, ip, firmware_version, board_type, detection_count, total_detections, scanners: [.scanners[] | {slot, uart, connected, health, transport, transport_fallback, transport_tx_err, transport_rx_err, transport_hb, uart_raw_seen, uart_json_err}], time_sync: {sync_health, last_attempt_age_s, fetch_ok_count, fetch_fail_count}, reporting: {network_mode, uploads_ok, uploads_fail}}]}'
   else
     echo "${nodes_json:-unreachable}"
   fi

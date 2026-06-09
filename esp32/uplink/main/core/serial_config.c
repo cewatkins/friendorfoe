@@ -218,6 +218,9 @@ static void print_scanner_status_json(const char *name, uint8_t scanner_id,
                "\"ble_any_with_payload_seen\":%lu,"
                "\"ble_any_empty_seen\":%lu,"
                "\"uart_tx_dropped\":%lu,\"uart_tx_high_water\":%lu,"
+             "\"transport\":\"%s\",\"transport_fallback\":%s,"
+             "\"transport_tx_err\":%lu,\"transport_rx_err\":%lu,"
+             "\"transport_hb\":%lu,"
                "\"tx_queue_depth\":%lu,\"tx_queue_capacity\":%lu,"
                "\"tx_queue_pressure_pct\":%lu,"
                "\"ble_any_last_rssi\":%d,\"ble_any_best_rssi\":%d,"
@@ -252,6 +255,11 @@ static void print_scanner_status_json(const char *name, uint8_t scanner_id,
                (unsigned long)info->ble_any_empty_seen,
                (unsigned long)info->uart_tx_dropped,
                (unsigned long)info->uart_tx_high_water,
+               info->transport_active[0] ? info->transport_active : "uart",
+               info->transport_fallback ? "true" : "false",
+               (unsigned long)info->transport_tx_err,
+               (unsigned long)info->transport_rx_err,
+               (unsigned long)info->transport_heartbeat,
                (unsigned long)info->tx_queue_depth,
                (unsigned long)info->tx_queue_capacity,
                (unsigned long)info->tx_queue_pressure_pct,

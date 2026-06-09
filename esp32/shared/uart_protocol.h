@@ -190,6 +190,11 @@ extern "C" {
 #define JSON_KEY_FIRST_SEEN         "first"
 #define JSON_KEY_LAST_UPDATED       "last"
 #define JSON_KEY_SEQ                "seq"
+#define JSON_KEY_TRANSPORT_ACTIVE   "transport"
+#define JSON_KEY_TRANSPORT_FALLBACK "transport_fallback"
+#define JSON_KEY_TRANSPORT_TX_ERR   "transport_tx_err"
+#define JSON_KEY_TRANSPORT_RX_ERR   "transport_rx_err"
+#define JSON_KEY_TRANSPORT_HEARTBEAT "transport_hb"
 /* WiFi probe request fields */
 #define JSON_KEY_PROBED_SSIDS       "probed"
 /* BLE fingerprinting fields */
