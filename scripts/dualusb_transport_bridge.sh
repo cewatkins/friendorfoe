@@ -17,6 +17,7 @@ Options:
   --slot           Logical scanner slot label for uplink ingest (default: ble)
   --dry-run        Parse/filter/forward locally without opening serial devices
   --input-file     Scanner line source for --dry-run (default: stdin)
+  --once           Exit after forwarding the first accepted frame
 
 Example:
   eval "$(scripts/discover_dual_usb.sh)"
@@ -28,6 +29,7 @@ scanner_port=""
 uplink_port=""
 slot="ble"
 dry_run=false
+once=false
 input_file=""
 stats_interval_s=5
 resend_interval_s=10
@@ -46,6 +48,8 @@ last_resend_epoch=0
 
 last_status_line=""
 last_scanner_info_line=""
+forwarded_count=0
+stop_requested=false
 
 send_bridge_frame() {
   local payload="$1"
@@ -79,6 +83,10 @@ handle_scanner_line() {
         "$line" == *'"type":"fw_ready"'* ||
         "$line" == *'"type":"ota_'* ]]; then
     send_bridge_frame "$line" || return 1
+    ((forwarded_count++))
+    if [[ "$once" == "true" ]]; then
+      stop_requested=true
+    fi
   fi
 
   return 0
@@ -200,6 +208,10 @@ while [[ $# -gt 0 ]]; do
       input_file="${2:-}"
       shift 2
       ;;
+    --once)
+      once=true
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -239,12 +251,18 @@ if [[ "$slot" != "ble" && "$slot" != "wifi" && "$slot" != "0" && "$slot" != "1" 
 fi
 
 if [[ "$dry_run" == "true" ]]; then
-  echo "[dualusb-bridge] dry-run enabled slot=$slot source=${input_file:-stdin}"
+  echo "[dualusb-bridge] dry-run enabled slot=$slot source=${input_file:-stdin} once=$once"
   while IFS= read -r line; do
     print_bridge_stats_if_due
     handle_scanner_line "$line" || break
+    if [[ "$stop_requested" == "true" ]]; then
+      break
+    fi
   done < "${input_file:-/dev/stdin}"
   print_bridge_stats_if_due
+  if [[ "$once" == "true" ]]; then
+    echo "[dualusb-bridge] once mode complete; forwarded=$forwarded_count"
+  fi
   exit 0
 fi
 
@@ -252,7 +270,7 @@ fi
 stty -F "$scanner_port" raw -echo 115200 || true
 stty -F "$uplink_port" raw -echo 115200 || true
 
-echo "[dualusb-bridge] scanner=$scanner_port uplink=$uplink_port slot=$slot"
+echo "[dualusb-bridge] scanner=$scanner_port uplink=$uplink_port slot=$slot once=$once"
 
 while true; do
   if [[ ! -e "$scanner_port" || ! -e "$uplink_port" ]]; then
@@ -284,12 +302,19 @@ while true; do
     print_bridge_stats_if_due
     maybe_resend_cached_control_frames
     handle_scanner_line "$line" || break
+    if [[ "$stop_requested" == "true" ]]; then
+      break
+    fi
   done < <(stdbuf -oL cat "$scanner_port")
 
   drain_uplink_responses
   print_bridge_stats_if_due
   exec 3>&-
   exec 4>&-
+  if [[ "$stop_requested" == "true" ]]; then
+    echo "[dualusb-bridge] once mode complete; forwarded=$forwarded_count"
+    exit 0
+  fi
   echo "[dualusb-bridge] stream interrupted, reconnecting..."
   sleep 1
 done

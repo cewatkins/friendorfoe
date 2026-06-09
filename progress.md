@@ -187,6 +187,20 @@ Branch: dualusb
 ### Validation
 - Script syntax validated: `bash -n scripts/dualusb_transport_bridge.sh`.
 
+## Implementation Progress (Go+6)
+- Added one-shot operator mode for bounded bridge validation runs.
+
+### Added/Updated
+- `scripts/dualusb_transport_bridge.sh`
+  - New flag: `--once`
+  - Behavior:
+    - exits after first accepted frame is forwarded
+    - works with both normal serial mode and `--dry-run`
+    - prints completion summary with forwarded count
+
+### Validation
+- Script syntax validated: `bash -n scripts/dualusb_transport_bridge.sh`.
+
 ## Implementation Progress (Go+5)
 - Added dry-run mode for local validation of bridge filtering and forwarding behavior.
 
