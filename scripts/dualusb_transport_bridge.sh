@@ -18,6 +18,9 @@ Options:
   --dry-run        Parse/filter/forward locally without opening serial devices
   --input-file     Scanner line source for --dry-run (default: stdin)
   --once           Exit after forwarding the first accepted frame
+  --stats-interval <sec>   Periodic stats print interval (default: 5)
+  --resend-interval <sec>  Min delay between metadata resends (default: 10)
+  --resend-stale <sec>     ACK age threshold to trigger resend/warning (default: 20)
 
 Example:
   eval "$(scripts/discover_dual_usb.sh)"
@@ -53,6 +56,10 @@ stop_requested=false
 terminate_reason=""
 fd3_open=false
 fd4_open=false
+
+is_positive_int() {
+  [[ "$1" =~ ^[1-9][0-9]*$ ]]
+}
 
 print_final_summary() {
   local pending ack_age
@@ -264,6 +271,18 @@ while [[ $# -gt 0 ]]; do
       once=true
       shift
       ;;
+    --stats-interval)
+      stats_interval_s="${2:-}"
+      shift 2
+      ;;
+    --resend-interval)
+      resend_interval_s="${2:-}"
+      shift 2
+      ;;
+    --resend-stale)
+      resend_ack_stale_s="${2:-}"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -294,6 +313,19 @@ fi
 
 if [[ -n "$input_file" && ! -f "$input_file" ]]; then
   echo "input file does not exist: $input_file" >&2
+  exit 2
+fi
+
+if ! is_positive_int "$stats_interval_s"; then
+  echo "invalid --stats-interval '$stats_interval_s' (must be positive integer seconds)" >&2
+  exit 2
+fi
+if ! is_positive_int "$resend_interval_s"; then
+  echo "invalid --resend-interval '$resend_interval_s' (must be positive integer seconds)" >&2
+  exit 2
+fi
+if ! is_positive_int "$resend_ack_stale_s"; then
+  echo "invalid --resend-stale '$resend_ack_stale_s' (must be positive integer seconds)" >&2
   exit 2
 fi
 

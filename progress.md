@@ -187,6 +187,21 @@ Branch: dualusb
 ### Validation
 - Script syntax validated: `bash -n scripts/dualusb_transport_bridge.sh`.
 
+## Implementation Progress (Go+9)
+- Added runtime CLI tuning for bridge stats and resend thresholds.
+
+### Added/Updated
+- `scripts/dualusb_transport_bridge.sh`
+  - New options:
+    - `--stats-interval <sec>`
+    - `--resend-interval <sec>`
+    - `--resend-stale <sec>`
+  - Input validation enforces positive integer seconds for all three knobs.
+  - Startup config output reflects effective override values.
+
+### Validation
+- Script syntax validated: `bash -n scripts/dualusb_transport_bridge.sh`.
+
 ## Implementation Progress (Go+8)
 - Added graceful shutdown path for operator interrupts and process termination.
 
