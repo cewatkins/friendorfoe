@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import json
+import os
+import sys
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -231,9 +233,18 @@ class MockBackendHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    host = "0.0.0.0"
-    port = 8000
-    server = ThreadingHTTPServer((host, port), MockBackendHandler)
+    host = os.getenv("MOCK_BACKEND_HOST", "0.0.0.0")
+    port = int(os.getenv("MOCK_BACKEND_PORT", "8000"))
+    try:
+        server = ThreadingHTTPServer((host, port), MockBackendHandler)
+    except OSError as exc:
+        if exc.errno == 98:
+            print(
+                f"Port {port} is already in use. "
+                f"Set MOCK_BACKEND_PORT to a free port, e.g. MOCK_BACKEND_PORT=8010",
+                file=sys.stderr,
+            )
+        raise
     print(f"Mock backend running on http://{host}:{port}")
     server.serve_forever()
 

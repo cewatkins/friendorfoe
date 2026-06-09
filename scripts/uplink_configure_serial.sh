@@ -75,9 +75,61 @@ fi
 send_line() {
   local line="$1"
   if [[ -n "$SUDO_CMD" ]]; then
-    printf '%s\n' "$line" | $SUDO_CMD tee "$PORT" >/dev/null
+    $SUDO_CMD python3 - "$PORT" "$line" <<'PY'
+import os
+import sys
+import time
+
+port = sys.argv[1]
+payload = (sys.argv[2] + "\n").encode("utf-8", "replace")
+fd = os.open(port, os.O_WRONLY | os.O_NONBLOCK)
+try:
+    sent = 0
+    deadline = time.time() + 1.5
+    while sent < len(payload):
+        if time.time() > deadline:
+            raise TimeoutError(f"serial write timeout on {port}")
+        n = 0
+        try:
+            n = os.write(fd, payload[sent:])
+        except BlockingIOError:
+            time.sleep(0.02)
+            continue
+        if n <= 0:
+            time.sleep(0.02)
+            continue
+        sent += n
+finally:
+    os.close(fd)
+PY
   else
-    printf '%s\n' "$line" > "$PORT"
+    python3 - "$PORT" "$line" <<'PY'
+import os
+import sys
+import time
+
+port = sys.argv[1]
+payload = (sys.argv[2] + "\n").encode("utf-8", "replace")
+fd = os.open(port, os.O_WRONLY | os.O_NONBLOCK)
+try:
+    sent = 0
+    deadline = time.time() + 1.5
+    while sent < len(payload):
+        if time.time() > deadline:
+            raise TimeoutError(f"serial write timeout on {port}")
+        n = 0
+        try:
+            n = os.write(fd, payload[sent:])
+        except BlockingIOError:
+            time.sleep(0.02)
+            continue
+        if n <= 0:
+            time.sleep(0.02)
+            continue
+        sent += n
+finally:
+    os.close(fd)
+PY
   fi
   sleep 0.3
 }

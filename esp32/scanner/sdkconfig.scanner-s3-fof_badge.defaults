@@ -1,8 +1,16 @@
 # Friend or Foe - Scanner (FoF Badge, Seeed Studio XIAO ESP32S3 / ESP32-S3R8)
 # 8 MB flash, 8 MB octal PSRAM. Same app behavior as scanner-s3-combo.
 
-# Console on USB-JTAG so UART GPIO1/GPIO2 stay clean for uplink data.
-CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+# Console on UART0 so external USB-UART bridges can drive runtime control.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_UART=y
+CONFIG_ESP_CONSOLE_UART_NUM=0
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+
+# Explicitly keep USB console modes off for this badge variant.
+# CONFIG_ESP_CONSOLE_USB_CDC is not set
+# CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG is not set
+# CONFIG_ESP_CONSOLE_UART_CUSTOM is not set
 
 # Bluetooth (BLE for scanning)
 CONFIG_BT_ENABLED=y
