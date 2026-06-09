@@ -51,6 +51,19 @@ last_scanner_info_line=""
 forwarded_count=0
 stop_requested=false
 
+print_startup_config() {
+  local mode source
+  mode="serial"
+  source="$scanner_port"
+  if [[ "$dry_run" == "true" ]]; then
+    mode="dry-run"
+    source="${input_file:-stdin}"
+  fi
+
+  echo "[dualusb-bridge] config mode=$mode slot=$slot once=$once stats_interval_s=$stats_interval_s resend_interval_s=$resend_interval_s resend_ack_stale_s=$resend_ack_stale_s"
+  echo "[dualusb-bridge] config source=$source uplink=${uplink_port:-n/a}"
+}
+
 send_bridge_frame() {
   local payload="$1"
   ((sent_count++))
@@ -251,7 +264,8 @@ if [[ "$slot" != "ble" && "$slot" != "wifi" && "$slot" != "0" && "$slot" != "1" 
 fi
 
 if [[ "$dry_run" == "true" ]]; then
-  echo "[dualusb-bridge] dry-run enabled slot=$slot source=${input_file:-stdin} once=$once"
+  print_startup_config
+  echo "[dualusb-bridge] dry-run enabled"
   while IFS= read -r line; do
     print_bridge_stats_if_due
     handle_scanner_line "$line" || break
@@ -270,7 +284,7 @@ fi
 stty -F "$scanner_port" raw -echo 115200 || true
 stty -F "$uplink_port" raw -echo 115200 || true
 
-echo "[dualusb-bridge] scanner=$scanner_port uplink=$uplink_port slot=$slot once=$once"
+print_startup_config
 
 while true; do
   if [[ ! -e "$scanner_port" || ! -e "$uplink_port" ]]; then

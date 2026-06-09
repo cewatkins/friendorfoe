@@ -187,6 +187,20 @@ Branch: dualusb
 ### Validation
 - Script syntax validated: `bash -n scripts/dualusb_transport_bridge.sh`.
 
+## Implementation Progress (Go+7)
+- Added startup configuration summary for faster operator verification.
+
+### Added/Updated
+- `scripts/dualusb_transport_bridge.sh`
+  - Emits startup config lines showing:
+    - mode (`serial` or `dry-run`)
+    - slot and once-mode flag
+    - stats/resend timing thresholds
+    - effective source and uplink endpoints
+
+### Validation
+- Script syntax validated: `bash -n scripts/dualusb_transport_bridge.sh`.
+
 ## Implementation Progress (Go+6)
 - Added one-shot operator mode for bounded bridge validation runs.
 
