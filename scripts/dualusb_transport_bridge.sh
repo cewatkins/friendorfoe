@@ -21,6 +21,7 @@ Options:
   --stats-interval <sec>   Periodic stats print interval (default: 5)
   --resend-interval <sec>  Min delay between metadata resends (default: 10)
   --resend-stale <sec>     ACK age threshold to trigger resend/warning (default: 20)
+  --max-seconds <sec>      Stop bridge after bounded runtime
 
 Example:
   eval "$(scripts/discover_dual_usb.sh)"
@@ -37,6 +38,7 @@ input_file=""
 stats_interval_s=5
 resend_interval_s=10
 resend_ack_stale_s=20
+max_seconds=0
 
 sent_count=0
 ack_count=0
@@ -56,6 +58,7 @@ stop_requested=false
 terminate_reason=""
 fd3_open=false
 fd4_open=false
+timer_pid=""
 
 is_positive_int() {
   [[ "$1" =~ ^[1-9][0-9]*$ ]]
@@ -85,16 +88,39 @@ close_bridge_fds() {
 request_shutdown() {
   local reason="$1"
   stop_requested=true
-  terminate_reason="$reason"
+  if [[ -z "$terminate_reason" ]]; then
+    terminate_reason="$reason"
+  fi
+}
+
+cancel_max_runtime_timer() {
+  if [[ -n "$timer_pid" ]]; then
+    kill "$timer_pid" >/dev/null 2>&1 || true
+    wait "$timer_pid" 2>/dev/null || true
+    timer_pid=""
+  fi
+}
+
+start_max_runtime_timer() {
+  if (( max_seconds <= 0 )); then
+    return
+  fi
+  (
+    sleep "$max_seconds"
+    kill -s ALRM "$$" >/dev/null 2>&1 || true
+  ) &
+  timer_pid="$!"
 }
 
 on_exit() {
+  cancel_max_runtime_timer
   close_bridge_fds
   print_final_summary
 }
 
 trap 'request_shutdown "signal_int"' INT
 trap 'request_shutdown "signal_term"' TERM
+trap 'request_shutdown "max_seconds"' ALRM
 trap on_exit EXIT
 
 print_startup_config() {
@@ -107,7 +133,7 @@ print_startup_config() {
   fi
 
   echo "[dualusb-bridge] config mode=$mode slot=$slot once=$once stats_interval_s=$stats_interval_s resend_interval_s=$resend_interval_s resend_ack_stale_s=$resend_ack_stale_s"
-  echo "[dualusb-bridge] config source=$source uplink=${uplink_port:-n/a}"
+  echo "[dualusb-bridge] config source=$source uplink=${uplink_port:-n/a} max_seconds=$max_seconds"
 }
 
 send_bridge_frame() {
@@ -283,6 +309,10 @@ while [[ $# -gt 0 ]]; do
       resend_ack_stale_s="${2:-}"
       shift 2
       ;;
+    --max-seconds)
+      max_seconds="${2:-}"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -328,6 +358,12 @@ if ! is_positive_int "$resend_ack_stale_s"; then
   echo "invalid --resend-stale '$resend_ack_stale_s' (must be positive integer seconds)" >&2
   exit 2
 fi
+if [[ "$max_seconds" != "0" ]] && ! is_positive_int "$max_seconds"; then
+  echo "invalid --max-seconds '$max_seconds' (must be 0 or positive integer seconds)" >&2
+  exit 2
+fi
+
+start_max_runtime_timer
 
 if [[ "$slot" != "ble" && "$slot" != "wifi" && "$slot" != "0" && "$slot" != "1" ]]; then
   echo "invalid --slot '$slot' (use ble|wifi|0|1)" >&2

@@ -187,6 +187,19 @@ Branch: dualusb
 ### Validation
 - Script syntax validated: `bash -n scripts/dualusb_transport_bridge.sh`.
 
+## Implementation Progress (Go+10)
+- Added bounded runtime mode for unattended soak tests.
+
+### Added/Updated
+- `scripts/dualusb_transport_bridge.sh`
+  - New option: `--max-seconds <sec>`
+  - Uses signal-driven timer to request graceful shutdown after the configured runtime.
+  - Works across dry-run and serial mode.
+  - Startup config output includes effective `max_seconds` value.
+
+### Validation
+- Script syntax validated: `bash -n scripts/dualusb_transport_bridge.sh`.
+
 ## Implementation Progress (Go+9)
 - Added runtime CLI tuning for bridge stats and resend thresholds.
 
